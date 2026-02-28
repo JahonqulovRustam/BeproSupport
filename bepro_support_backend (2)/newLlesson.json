@@ -1,0 +1,24 @@
+{
+    "title": "Kirish",
+    "description": "112 dasturiga kirish",
+    "moduleId":1,
+    "questions": [
+        {
+          "text": "Savol matni",
+          "options": ["javob A","javob B", "javob C"],
+          "correctAns":"to'g'ri variant"
+        }],
+    "externalMedia":[
+        {
+          "externalUrl":"youtube.com videosi",
+          "type":"VIDEO"
+    	},
+    	{
+          "externalUrl":"internetdagi rasm ssilkasi 1",
+          "type":"IMAGE"
+        },
+        {
+          	"externalUrl":"internetdagi rasm ssilkasi 2",
+          	"type":"IMAGE"
+        }]
+}
