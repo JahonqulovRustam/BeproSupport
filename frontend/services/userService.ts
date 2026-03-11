@@ -37,5 +37,10 @@ export const userService = {
             role: u.role,
             avatar: `https://api.dicebear.com/7.x/shapes/svg?seed=${u.username}`
         }));
+    },
+
+    async createUser(user: { firstName: string; lastName: string; username: string; password: string; role: string }): Promise<any> {
+        const response = await apiClient.post('/users', user);
+        return response.data;
     }
 };

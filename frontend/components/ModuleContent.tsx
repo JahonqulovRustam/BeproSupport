@@ -11,20 +11,27 @@ interface ModuleContentProps {
 }
 
 const ModuleContent: React.FC<ModuleContentProps> = ({ module, currentUser, onTakeTest, onUpdateModule }) => {
-  const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(module.lessons.length > 0 ? module.lessons[0] : null);
+  // Support lessons with media property (not in types)
+  const [selectedLesson, setSelectedLesson] = useState<any>(module.lessons.length > 0 ? module.lessons[0] : null);
   const [aiQuestion, setAiQuestion] = useState('');
   const [aiResponse, setAiResponse] = useState('');
   const [isAsking, setIsAsking] = useState(false);
   const [isManaging, setIsManaging] = useState(false);
+  const [mediaIndex, setMediaIndex] = useState(0);
 
-  // Update selected lesson if module changes or lessons are added
   React.useEffect(() => {
-    if (module.lessons.length > 0 && !selectedLesson) {
+    setMediaIndex(0);
+    if (module.lessons.length > 0) {
       setSelectedLesson(module.lessons[0]);
-    } else if (module.lessons.length === 0) {
+    } else {
       setSelectedLesson(null);
     }
-  }, [module.lessons]);
+  }, [module]);
+
+  // Reset media index when lesson changes
+  React.useEffect(() => {
+    setMediaIndex(0);
+  }, [selectedLesson]);
 
   const handleAskAi = async () => {
     if (!aiQuestion.trim() || !selectedLesson) return;
@@ -32,6 +39,19 @@ const ModuleContent: React.FC<ModuleContentProps> = ({ module, currentUser, onTa
     const answer = await geminiService.getTutorAdvice(selectedLesson.title, aiQuestion);
     setAiResponse(answer || "Kechirasiz, ma'lumotni qayta ishlashda xatolik yuz berdi.");
     setIsAsking(false);
+  };
+
+  // Handle updateModule to fetch latest lesson after upload
+  const handleUpdateModule = async (updatedModule: SystemModule) => {
+    onUpdateModule(updatedModule);
+    // Try to find the updated lesson
+    if (selectedLesson) {
+      const updatedLesson = updatedModule.lessons.find((l: any) => l.id === selectedLesson.id);
+      if (updatedLesson) {
+        setSelectedLesson(updatedLesson);
+        setMediaIndex(0);
+      }
+    }
   };
 
   if (isManaging && currentUser.role === 'ADMIN') {
@@ -47,7 +67,7 @@ const ModuleContent: React.FC<ModuleContentProps> = ({ module, currentUser, onTa
             Ko'rish rejimiga qaytish
           </button>
         </div>
-        <AdminContentManager module={module} onUpdateModule={onUpdateModule} />
+        <AdminContentManager module={module} onUpdateModule={handleUpdateModule} />
       </div>
     );
   }
@@ -82,15 +102,67 @@ const ModuleContent: React.FC<ModuleContentProps> = ({ module, currentUser, onTa
         {/* Main Content Area */}
         <div className="flex-1 space-y-6">
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-            <div className="aspect-video bg-black">
-              <iframe
-                className="w-full h-full"
-                src={selectedLesson.videoUrl}
-                title={selectedLesson.title}
-                frameBorder="0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              ></iframe>
+            <div className="aspect-video bg-black flex flex-col relative">
+              {/* Render lesson media with pager */}
+              {Array.isArray(selectedLesson?.media) && selectedLesson.media.length > 0 ? (
+                (() => {
+                  const media = selectedLesson.media[mediaIndex];
+                  if (!media) return <div className="w-full h-full flex items-center justify-center text-white text-lg">Media mavjud emas</div>;
+                  if (media.type === 'VIDEO') {
+                    // Local stream (starts with /api/media/stream)
+                    if (media.url.startsWith('/api/media/stream')) {
+                      const backendUrl = `http://localhost:8080${media.url}`;
+                      return (
+                        <video key={media.id} className="w-full h-full" controls>
+                          <source src={backendUrl} type="video/mp4" />
+                          Sizning brauzeringiz videoni qo'llab-quvvatlamaydi.
+                        </video>
+                      );
+                    }
+                    // External video (YouTube, etc.)
+                    if (media.url.startsWith('http') || media.url.includes('youtube.com')) {
+                      return (
+                        <iframe
+                          key={media.id}
+                          className="w-full h-full"
+                          src={media.url}
+                          title={selectedLesson.title}
+                          frameBorder="0"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                        ></iframe>
+                      );
+                    }
+                  } else if (media.type === 'IMAGE') {
+                    return (
+                      <img key={media.id} className="w-full h-full object-contain" src={media.url} alt={selectedLesson.title} />
+                    );
+                  }
+                  return <div className="w-full h-full flex items-center justify-center text-white text-lg">Media mavjud emas</div>;
+                })()
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-white text-lg">Media mavjud emas</div>
+              )}
+              {/* Pager controls */}
+              {Array.isArray(selectedLesson?.media) && selectedLesson.media.length > 1 && (
+                <div className="absolute bottom-2 left-0 right-0 flex justify-center items-center gap-2">
+                  <button
+                    className="px-2 py-1 bg-slate-700 text-white rounded-full disabled:opacity-50"
+                    disabled={mediaIndex === 0}
+                    onClick={() => setMediaIndex(mediaIndex - 1)}
+                  >
+                    <i className="fas fa-chevron-left"></i>
+                  </button>
+                  <span className="text-white text-xs">{mediaIndex + 1} / {selectedLesson.media.length}</span>
+                  <button
+                    className="px-2 py-1 bg-slate-700 text-white rounded-full disabled:opacity-50"
+                    disabled={mediaIndex === selectedLesson.media.length - 1}
+                    onClick={() => setMediaIndex(mediaIndex + 1)}
+                  >
+                    <i className="fas fa-chevron-right"></i>
+                  </button>
+                </div>
+              )}
             </div>
             <div className="p-8">
               <div className="flex justify-between items-start mb-4">
@@ -166,6 +238,8 @@ const ModuleContent: React.FC<ModuleContentProps> = ({ module, currentUser, onTa
                   setSelectedLesson(lesson);
                   setAiResponse('');
                   setAiQuestion('');
+                  console.log('Lesson object:', lesson);
+                  console.log('Lesson media:', lesson.media);
                 }}
                 className={`w-full text-left p-4 rounded-xl border-2 transition-all ${selectedLesson.id === lesson.id
                   ? 'border-blue-600 bg-white shadow-md'
@@ -181,7 +255,7 @@ const ModuleContent: React.FC<ModuleContentProps> = ({ module, currentUser, onTa
                     <p className={`text-sm font-bold ${selectedLesson.id === lesson.id ? 'text-slate-900' : 'text-slate-600'}`}>
                       {lesson.title}
                     </p>
-                    <p className="text-[11px] text-slate-400 mt-1 uppercase tracking-wider font-semibold">12:45 daqiqa • 10 ta savol</p>
+                    <p className="text-[11px] text-slate-400 mt-1 font-semibold">{lesson.questions.length} ta savol</p>
                   </div>
                 </div>
               </button>

@@ -1,7 +1,7 @@
 
 import axios from 'axios';
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://192.168.0.241:8080/api';
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://192.168.0.113:8080/api';
 
 const apiClient = axios.create({
     baseURL: BASE_URL,

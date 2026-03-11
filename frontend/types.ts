@@ -14,6 +14,7 @@ export interface Lesson {
   videoUrl: string;
   description: string;
   questions: Question[];
+  media: Media[];
 }
 
 export interface SystemModule {
@@ -22,6 +23,12 @@ export interface SystemModule {
   icon: string;
   description: string;
   lessons: Lesson[];
+}
+
+export interface Media {
+  id: string;
+  type: 'VIDEO' | 'IMAGE' | 'OTHER';
+  url: string;
 }
 
 export interface UserProgress {

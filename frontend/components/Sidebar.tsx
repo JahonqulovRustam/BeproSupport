@@ -88,6 +88,15 @@ const Sidebar: React.FC<SidebarProps> = ({
               <span>Umumiy statistika</span>
             </button>
           )}
+          {role === 'ADMIN' && onViewUsers && (
+            <button
+              onClick={onViewUsers}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-slate-100 text-sm font-medium"
+            >
+              <i className="fas fa-users w-5 text-center"></i>
+              <span>Foydalanuvchilar</span>
+            </button>
+          )}
           <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-slate-100 text-sm font-medium">
             <i className="fas fa-user-check w-5 text-center"></i>
             <span>Mening natijalarim</span>

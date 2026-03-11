@@ -54,14 +54,9 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
 
       const savedLesson = await moduleService.createLesson(lessonData, files);
 
-      if (editingLessonId) {
-        const updatedLessons = module.lessons.map(l =>
-          l.id === editingLessonId ? savedLesson : l
-        );
-        onUpdateModule({ ...module, lessons: updatedLessons });
-      } else {
-        onUpdateModule({ ...module, lessons: [...module.lessons, savedLesson] });
-      }
+      // Fetch updated module from backend to get fresh lesson/media
+      const updatedModule = await moduleService.getModuleById(module.id);
+      onUpdateModule(updatedModule);
 
       setNewLesson({ title: '', videoUrl: '', description: '', questions: [] });
       setVideoFile(null);
@@ -75,10 +70,18 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
     }
   };
 
-  const handleDeleteLesson = (lessonId: string) => {
-    const updatedLessons = module.lessons.filter(l => l.id !== lessonId);
-    onUpdateModule({ ...module, lessons: updatedLessons });
+  const handleDeleteLesson = async (lessonId: string) => {
+    if (!window.confirm('Darsni o‘chirishni istaysizmi? Bu amal qaytarilmaydi.')) return;
+    try {
+      await moduleService.deleteLesson(lessonId); // You need to implement this in moduleService
+      // Fetch updated module from backend
+      const updatedModule = await moduleService.getModuleById(module.id);
+      onUpdateModule(updatedModule);
+    } catch (error) {
+      alert('Darsni o‘chirishda xatolik yuz berdi');
+    }
   };
+  
 
   const handleEditLesson = (lesson: Lesson) => {
     setEditingLessonId(lesson.id);
@@ -334,5 +337,4 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
     </div>
   );
 };
-
 export default AdminContentManager;

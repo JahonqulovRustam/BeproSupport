@@ -1,6 +1,6 @@
 
 import apiClient from './apiClient';
-import { SystemModule, Lesson, Question } from '../types';
+import { SystemModule, Lesson, Question, Media } from '../types';
 
 interface BackendMedia {
     id: number;
@@ -30,6 +30,12 @@ interface BackendModule {
     lessons: BackendLesson[];
 }
 
+const mapMedia = (m: BackendMedia): Media => ({
+    id: m.id.toString(),
+    type: m.type,
+    url: m.url,
+});
+
 const mapQuestion = (q: BackendQuestion): Question => ({
     id: q.id.toString(),
     text: q.text,
@@ -37,12 +43,15 @@ const mapQuestion = (q: BackendQuestion): Question => ({
     correctAnswer: q.options.indexOf(q.correctAns),
 });
 
+
+
 const mapLesson = (l: BackendLesson): Lesson => ({
     id: l.id.toString(),
     title: l.title,
     description: l.description,
     videoUrl: l.media?.find(m => m.type === 'VIDEO')?.url || '',
     questions: l.questions.map(mapQuestion),
+    media: l.media.map(mapMedia),
 });
 
 const mapModule = (m: BackendModule): SystemModule => ({
@@ -94,5 +103,9 @@ export const moduleService = {
             }
         });
         return mapLesson(response.data);
-    }
+    },
+
+    async deleteLesson(id: string): Promise<void> {
+        await apiClient.delete(`/lessons/${id}`);
+    },
 };

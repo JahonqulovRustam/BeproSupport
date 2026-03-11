@@ -82,7 +82,8 @@ const App: React.FC = () => {
   };
 
   const handleAddUser = (newUser: User) => {
-    setUsers(prev => [...prev, newUser]);
+    // Reload users from backend after adding
+    userService.getAllUsers().then(fetchedUsers => setUsers(fetchedUsers));
   };
 
   const handleDeleteUser = (id: string) => {
@@ -208,65 +209,65 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
-      <Sidebar
-        activeModuleId={activeModuleId}
-        onSelectModule={handleSelectModule}
-        currentUser={currentUser}
-        modules={modules}
-        onViewUsers={currentUser.role === 'ADMIN' ? () => setView('USERS') : undefined}
-        onViewSettings={() => setView('SETTINGS')}
-        onViewSystems={currentUser.role === 'ADMIN' ? () => setView('SYSTEMS') : undefined}
-        onViewDashboard={currentUser.role === 'ADMIN' ? () => setView('DASHBOARD') : undefined}
-      />
+    <>
+      <div className="flex min-h-screen bg-slate-50">
+        <Sidebar
+          activeModuleId={activeModuleId}
+          onSelectModule={handleSelectModule}
+          currentUser={currentUser}
+          modules={modules}
+          onViewUsers={currentUser.role === 'ADMIN' ? () => setView('USERS') : undefined}
+          onViewSettings={() => setView('SETTINGS')}
+          onViewSystems={currentUser.role === 'ADMIN' ? () => setView('SYSTEMS') : undefined}
+          onViewDashboard={currentUser.role === 'ADMIN' ? () => setView('DASHBOARD') : undefined}
+        />
 
-      <main className="flex-1 p-8 max-h-screen overflow-y-auto custom-scrollbar">
-        {/* Header */}
-        <header className="flex justify-between items-center mb-10">
-          <div>
-            <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">
-              {view === 'DASHBOARD' ? `${activeModule?.name || 'Tizim'}: Analitika` :
-                view === 'MODULE_STATS' ? `${activeModule?.name || 'Tizim'}: Jamoa statistikasi` :
-                  view === 'USERS' ? 'Foydalanuvchilar' :
-                    view === 'SYSTEMS' ? 'Tizimlar' :
-                      view === 'SETTINGS' ? 'Sozlamalar' :
-                        activeModule?.name || 'Tizim'}
-            </h2>
-            <p className="text-slate-500 mt-1">
-              {view === 'DASHBOARD' ? 'Barcha tizimlar bo\'yicha jamoa samaradorligi' :
-                view === 'MODULE_STATS' ? `Xodimlarning ushbu modulni o'zlashtirish darajasi` :
-                  view === 'USERS' ? 'Tizim foydalanuvchilarini boshqarish paneli' :
-                    view === 'SYSTEMS' ? 'O\'quv tizimlarini boshqarish' :
-                      view === 'SETTINGS' ? 'Shaxsiy ma\'lumotlarni tahrirlash' :
-                        activeModule?.description || ''}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-3 mr-4 pr-4 border-r border-slate-200">
-              <div className="w-10 h-10 rounded-xl bg-white shadow-sm flex items-center justify-center text-slate-400">
-                <i className="fas fa-user"></i>
-              </div>
-              <div className="hidden md:block">
-                <p className="text-sm font-bold text-slate-900 leading-none">{currentUser.name}</p>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-1">{currentUser.role}</p>
-              </div>
+        <main className="flex-1 p-8 max-h-screen overflow-y-auto custom-scrollbar">
+          {/* Header */}
+          <header className="flex justify-between items-center mb-10">
+            <div>
+              <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+                {view === 'DASHBOARD' ? `${activeModule?.name || 'Tizim'}: Analitika` :
+                  view === 'MODULE_STATS' ? `${activeModule?.name || 'Tizim'}: Jamoa statistikasi` :
+                    view === 'USERS' ? 'Foydalanuvchilar' :
+                      view === 'SYSTEMS' ? 'Tizimlar' :
+                        view === 'SETTINGS' ? 'Sozlamalar' :
+                          activeModule?.name || 'Tizim'}
+              </h2>
+              <p className="text-slate-500 mt-1">
+                {view === 'DASHBOARD' ? 'Barcha tizimlar bo\'yicha jamoa samaradorligi' :
+                  view === 'MODULE_STATS' ? `Xodimlarning ushbu modulni o'zlashtirish darajasi` :
+                    view === 'USERS' ? 'Tizim foydalanuvchilarini boshqarish paneli' :
+                      view === 'SYSTEMS' ? 'O\'quv tizimlarini boshqarish' :
+                        view === 'SETTINGS' ? 'Shaxsiy ma\'lumotlarni tahrirlash' :
+                          activeModule?.description || ''}
+              </p>
             </div>
 
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3 mr-4 pr-4 border-r border-slate-200">
+                <div className="w-10 h-10 rounded-xl bg-white shadow-sm flex items-center justify-center text-slate-400">
+                  <i className="fas fa-user"></i>
+                </div>
+                <div className="hidden md:block">
+                  <p className="text-sm font-bold text-slate-900 leading-none">{currentUser.name}</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-1">{currentUser.role}</p>
+                </div>
+              </div>
+
+              <button
+                onClick={handleLogout}
+                className="w-10 h-10 bg-white border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-red-500 hover:border-red-100 transition-all shadow-sm"
+                title="Chiqish"
+              >
+                <i className="fas fa-power-off"></i>
+              </button>
             </div>
-            <button
-              onClick={handleLogout}
-              className="w-10 h-10 bg-white border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-red-500 hover:border-red-100 transition-all shadow-sm"
-              title="Chiqish"
-            >
-              <i className="fas fa-power-off"></i>
-            </button>
-          </div>
-        </header>
+          </header>
 
-        {renderContent()}
-      </main>
-
+          {renderContent()}
+        </main>
+      </div>
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(10px); }
@@ -283,7 +284,7 @@ const App: React.FC = () => {
           animation: slideUp 0.3s ease-out forwards;
         }
       `}</style>
-    </div >
+    </>
   );
 };
 
