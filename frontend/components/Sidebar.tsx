@@ -33,7 +33,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   // Filter modules based on user permissions
   const visibleModules = modules.filter(module => {
-    if (role === 'ADMIN') return true;
+    if (role === 'ADMIN' || role === 'EMPLOYEE') return true;
     return currentUser.allowedModules?.includes(module.id);
   });
 

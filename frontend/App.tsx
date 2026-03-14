@@ -15,25 +15,66 @@ import { moduleService } from './services/moduleService';
 import { userService } from './services/userService';
 import { setAuthCredentials } from './services/apiClient';
 
+type ViewType = 'CONTENT' | 'DASHBOARD' | 'MODULE_STATS' | 'MANAGE' | 'USERS' | 'SYSTEMS' | 'SETTINGS';
+
+// ─── Restore user from localStorage on first load ───────────────────────────
+const restoreUser = (): User | null => {
+  try {
+    const saved = localStorage.getItem('bepro_user');
+    const token = localStorage.getItem('bepro_jwt');
+    if (saved && token) return JSON.parse(saved);
+  } catch {
+    // corrupted storage — clear it
+    localStorage.removeItem('bepro_user');
+    localStorage.removeItem('bepro_jwt');
+  }
+  return null;
+};
+
 const App: React.FC = () => {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  // ✅ Restore user immediately — no flicker to login screen on reload
+  const [currentUser, setCurrentUser] = useState<User | null>(restoreUser);
   const [users, setUsers] = useState<User[]>(INITIAL_USERS);
   const [modules, setModules] = useState<SystemModule[]>(BEPRO_MODULES);
-  const [activeModuleId, setActiveModuleId] = useState(BEPRO_MODULES[0].id);
+  const [activeModuleId, setActiveModuleId] = useState(BEPRO_MODULES[0]?.id || '');
   const [activeLessonForQuiz, setActiveLessonForQuiz] = useState<Lesson | null>(null);
-  const [view, setView] = useState<'CONTENT' | 'DASHBOARD' | 'MODULE_STATS' | 'MANAGE' | 'USERS' | 'SYSTEMS' | 'SETTINGS'>('CONTENT');
+  const [view, setView] = useState<ViewType>(() => {
+    // Only restore last view if user session exists — otherwise always start fresh
+    const user = restoreUser();
+    if (!user) return 'CONTENT';
+    const saved = localStorage.getItem('bepro_view') as ViewType | null;
+    return saved || 'CONTENT';
+  });
 
-  // Load modules from backend - react to currentUser changes
+  // ─── Update URL hash to reflect current view ────────────────────────────────
+  useEffect(() => {
+    if (!currentUser) {
+      window.location.hash = '/login';
+      return;
+    }
+    const hashMap: Record<ViewType, string> = {
+      CONTENT: '/dashboard',
+      DASHBOARD: '/analytics',
+      MODULE_STATS: '/stats',
+      MANAGE: '/manage',
+      USERS: '/users',
+      SYSTEMS: '/systems',
+      SETTINGS: '/settings',
+    };
+    window.location.hash = hashMap[view];
+    localStorage.setItem('bepro_view', view);
+  }, [view, currentUser]);
+
+  // ─── Load modules from backend whenever user changes ────────────────────────
   useEffect(() => {
     const fetchModules = async () => {
-      // Don't fetch if no user is logged in (unless we want public modules)
-      if (!currentUser && !localStorage.getItem('bepro_auth')) return;
+      const token = localStorage.getItem('bepro_jwt');
+      if (!token || !currentUser) return; // ✅ guard on actual JWT, not bepro_auth
 
       try {
         const fetchedModules = await moduleService.getAllModules();
         if (fetchedModules.length > 0) {
           setModules(fetchedModules);
-          // Only set active module if not already set or if it's the first load
           setActiveModuleId(prev => prev || fetchedModules[0].id);
         }
       } catch (error) {
@@ -44,7 +85,7 @@ const App: React.FC = () => {
     fetchModules();
   }, [currentUser]);
 
-  // Load users from backend if ADMIN
+  // ─── Load users from backend if ADMIN ───────────────────────────────────────
   useEffect(() => {
     const fetchUsers = async () => {
       if (!currentUser || currentUser.role !== 'ADMIN') return;
@@ -59,13 +100,17 @@ const App: React.FC = () => {
     fetchUsers();
   }, [currentUser]);
 
+  // ─── Auth handlers ───────────────────────────────────────────────────────────
   const handleLogin = (user: User) => {
+    // ✅ Persist user to localStorage so reload restores session
+    localStorage.setItem('bepro_user', JSON.stringify(user));
+
     setCurrentUser(user);
+
     if (user.login && user.password) {
       setAuthCredentials(user.login, user.password);
     }
 
-    // Set first allowed module as active if user is restricted
     if (user.role === 'EMPLOYEE') {
       if (user.allowedModules && user.allowedModules.length > 0) {
         setActiveModuleId(user.allowedModules[0]);
@@ -77,12 +122,16 @@ const App: React.FC = () => {
   };
 
   const handleLogout = () => {
+    // ✅ Clear all persisted auth data on logout
+    localStorage.removeItem('bepro_user');
+    localStorage.removeItem('bepro_jwt');
+    localStorage.removeItem('bepro_view');
     setCurrentUser(null);
     setView('CONTENT');
   };
 
-  const handleAddUser = (newUser: User) => {
-    // Reload users from backend after adding
+  // ─── User management ─────────────────────────────────────────────────────────
+  const handleAddUser = (_newUser: User) => {
     userService.getAllUsers().then(fetchedUsers => setUsers(fetchedUsers));
   };
 
@@ -92,12 +141,14 @@ const App: React.FC = () => {
 
   const handleUpdateUser = (updatedUser: User) => {
     setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
-    // If the updated user is the current user, update setCurrentUser too
     if (currentUser?.id === updatedUser.id) {
-      setCurrentUser(updatedUser);
+      const updated = { ...updatedUser };
+      localStorage.setItem('bepro_user', JSON.stringify(updated));
+      setCurrentUser(updated);
     }
   };
 
+  // ─── Module management ───────────────────────────────────────────────────────
   const handleSelectModule = (id: string) => {
     setActiveModuleId(id);
     setView('CONTENT');
@@ -111,12 +162,11 @@ const App: React.FC = () => {
     try {
       const created = await moduleService.createModule({
         title: newModule.name,
-        description: newModule.description
+        description: newModule.description,
       });
       setModules(prev => [...prev, created]);
     } catch (error) {
       console.error('Modul qo\'shishda xatolik:', error);
-      // Fallback to local state if backend fails
       setModules(prev => [...prev, newModule]);
     }
   };
@@ -124,25 +174,25 @@ const App: React.FC = () => {
   const handleDeleteModule = async (id: string) => {
     try {
       await moduleService.deleteModule(id);
+    } catch (error) {
+      console.error('Modul o\'chirishda xatolik:', error);
+    } finally {
       const newModules = modules.filter(m => m.id !== id);
       setModules(newModules);
       if (activeModuleId === id) {
         setActiveModuleId(newModules.length > 0 ? newModules[0].id : '');
       }
-    } catch (error) {
-      console.error('Modul o\'chirishda xatolik:', error);
-      // Fallback
-      const newModules = modules.filter(m => m.id !== id);
-      setModules(newModules);
     }
   };
 
+  // ─── Show login if no user ───────────────────────────────────────────────────
   if (!currentUser) {
     return <Login onLogin={handleLogin} />;
   }
 
   const activeModule = modules.find(m => m.id === activeModuleId) || modules[0];
 
+  // ─── Render main content by view ─────────────────────────────────────────────
   const renderContent = () => {
     if (activeLessonForQuiz) {
       return (
@@ -167,26 +217,27 @@ const App: React.FC = () => {
 
     switch (view) {
       case 'USERS':
-        return <UserManagement
-          currentUser={currentUser}
-          users={users}
-          modules={modules}
-          onAddUser={handleAddUser}
-          onDeleteUser={handleDeleteUser}
-          onUpdateUser={handleUpdateUser}
-        />;
+        return (
+          <UserManagement
+            currentUser={currentUser}
+            users={users}
+            modules={modules}
+            onAddUser={handleAddUser}
+            onDeleteUser={handleDeleteUser}
+            onUpdateUser={handleUpdateUser}
+          />
+        );
       case 'SYSTEMS':
-        return <SystemManagement
-          modules={modules}
-          onAddModule={handleAddModule}
-          onUpdateModule={handleUpdateModule}
-          onDeleteModule={handleDeleteModule}
-        />;
+        return (
+          <SystemManagement
+            modules={modules}
+            onAddModule={handleAddModule}
+            onUpdateModule={handleUpdateModule}
+            onDeleteModule={handleDeleteModule}
+          />
+        );
       case 'SETTINGS':
-        return <Settings
-          currentUser={currentUser}
-          onUpdateProfile={handleUpdateUser}
-        />;
+        return <Settings currentUser={currentUser} onUpdateProfile={handleUpdateUser} />;
       case 'DASHBOARD':
         return <LeadDashboard activeModule={activeModule} />;
       case 'MODULE_STATS':
@@ -223,24 +274,23 @@ const App: React.FC = () => {
         />
 
         <main className="flex-1 p-8 max-h-screen overflow-y-auto custom-scrollbar">
-          {/* Header */}
           <header className="flex justify-between items-center mb-10">
             <div>
               <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">
-                {view === 'DASHBOARD' ? `${activeModule?.name || 'Tizim'}: Analitika` :
-                  view === 'MODULE_STATS' ? `${activeModule?.name || 'Tizim'}: Jamoa statistikasi` :
-                    view === 'USERS' ? 'Foydalanuvchilar' :
-                      view === 'SYSTEMS' ? 'Tizimlar' :
-                        view === 'SETTINGS' ? 'Sozlamalar' :
-                          activeModule?.name || 'Tizim'}
+                {view === 'DASHBOARD' ? `${activeModule?.name || 'Tizim'}: Analitika`
+                  : view === 'MODULE_STATS' ? `${activeModule?.name || 'Tizim'}: Jamoa statistikasi`
+                  : view === 'USERS' ? 'Foydalanuvchilar'
+                  : view === 'SYSTEMS' ? 'Tizimlar'
+                  : view === 'SETTINGS' ? 'Sozlamalar'
+                  : activeModule?.name || 'Tizim'}
               </h2>
               <p className="text-slate-500 mt-1">
-                {view === 'DASHBOARD' ? 'Barcha tizimlar bo\'yicha jamoa samaradorligi' :
-                  view === 'MODULE_STATS' ? `Xodimlarning ushbu modulni o'zlashtirish darajasi` :
-                    view === 'USERS' ? 'Tizim foydalanuvchilarini boshqarish paneli' :
-                      view === 'SYSTEMS' ? 'O\'quv tizimlarini boshqarish' :
-                        view === 'SETTINGS' ? 'Shaxsiy ma\'lumotlarni tahrirlash' :
-                          activeModule?.description || ''}
+                {view === 'DASHBOARD' ? 'Barcha tizimlar bo\'yicha jamoa samaradorligi'
+                  : view === 'MODULE_STATS' ? 'Xodimlarning ushbu modulni o\'zlashtirish darajasi'
+                  : view === 'USERS' ? 'Tizim foydalanuvchilarini boshqarish paneli'
+                  : view === 'SYSTEMS' ? 'O\'quv tizimlarini boshqarish'
+                  : view === 'SETTINGS' ? 'Shaxsiy ma\'lumotlarni tahrirlash'
+                  : activeModule?.description || ''}
               </p>
             </div>
 
@@ -268,6 +318,7 @@ const App: React.FC = () => {
           {renderContent()}
         </main>
       </div>
+
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(10px); }
@@ -277,12 +328,8 @@ const App: React.FC = () => {
           from { opacity: 0; transform: translateY(20px); }
           to { opacity: 1; transform: translateY(0); }
         }
-        .animate-fadeIn {
-          animation: fadeIn 0.4s ease-out forwards;
-        }
-        .animate-slideUp {
-          animation: slideUp 0.3s ease-out forwards;
-        }
+        .animate-fadeIn { animation: fadeIn 0.4s ease-out forwards; }
+        .animate-slideUp { animation: slideUp 0.3s ease-out forwards; }
       `}</style>
     </>
   );

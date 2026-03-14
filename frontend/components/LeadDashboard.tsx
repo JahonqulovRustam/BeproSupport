@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import * as XLSX from 'xlsx';
@@ -23,33 +22,9 @@ const MOCK_TEAM_DATA = [
 ];
 
 const MOCK_TEST_RESULTS: TestResult[] = [
-  {
-    id: '1',
-    employeeName: 'Ali Valiev',
-    system: 'Sistema-101',
-    lesson: 'Kirish darsi',
-    score: 85,
-    date: '2024-02-20',
-    status: 'passed'
-  },
-  {
-    id: '2',
-    employeeName: 'Olim Toshmatov',
-    system: 'Sistema-101',
-    lesson: 'Xavfsizlik asoslari',
-    score: 92,
-    date: '2024-02-21',
-    status: 'passed'
-  },
-  {
-    id: '3',
-    employeeName: 'Zuhra Karimova',
-    system: 'Sistema-102',
-    lesson: 'Ma\'lumotlar bazasi',
-    score: 65,
-    date: '2024-02-22',
-    status: 'failed'
-  }
+  { id: '1', employeeName: 'Ali Valiev', system: 'Sistema-101', lesson: 'Kirish darsi', score: 85, date: '2024-02-20', status: 'passed' },
+  { id: '2', employeeName: 'Olim Toshmatov', system: 'Sistema-101', lesson: 'Xavfsizlik asoslari', score: 92, date: '2024-02-21', status: 'passed' },
+  { id: '3', employeeName: 'Zuhra Karimova', system: 'Sistema-102', lesson: 'Ma\'lumotlar bazasi', score: 65, date: '2024-02-22', status: 'failed' }
 ];
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
@@ -83,13 +58,16 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Test Natijalari');
-    
-    const fileName = activeModule 
+
+    const fileName = activeModule
       ? `${activeModule.name}_natijalari_${new Date().toLocaleDateString()}.xlsx`
       : `Barcha_natijalar_${new Date().toLocaleDateString()}.xlsx`;
 
     XLSX.writeFile(workbook, fileName);
   };
+
+  // ✅ FIX: [...spread] before sort to avoid mutating read-only array
+  const sortedTeamData = [...MOCK_TEAM_DATA].sort((a, b) => b.score - a.score);
 
   return (
     <div className="space-y-8 animate-fadeIn pb-12">
@@ -140,18 +118,19 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
             <i className="fas fa-chart-bar text-blue-600"></i>
             Jamoa samaradorligi (O'rtacha ball)
           </h3>
-          <div className="h-64">
+          {/* ✅ FIX: explicit pixel height wrapper to fix recharts -1 width/height error */}
+          <div style={{ width: '100%', height: 256 }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={MOCK_TEAM_DATA}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
                 <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
-                <Tooltip 
+                <Tooltip
                   cursor={{ fill: '#f8fafc' }}
                   contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
                 />
                 <Bar dataKey="score" radius={[4, 4, 0, 0]}>
-                  {MOCK_TEAM_DATA.map((entry, index) => (
+                  {MOCK_TEAM_DATA.map((_, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Bar>
@@ -167,7 +146,8 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
             Eng yaxshi mutaxassislar
           </h3>
           <div className="space-y-4">
-            {MOCK_TEAM_DATA.sort((a,b) => b.score - a.score).map((emp, idx) => (
+            {/* ✅ FIX: use sortedTeamData (pre-sorted copy) instead of .sort() inline */}
+            {sortedTeamData.map((emp, idx) => (
               <div key={idx} className="flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-100">
                 <div className="flex items-center gap-3">
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${idx === 0 ? 'bg-yellow-100 text-yellow-700' : 'bg-slate-100 text-slate-600'}`}>
@@ -199,8 +179,8 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
           </h3>
           <div className="relative w-full sm:w-64">
             <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
-            <input 
-              type="text" 
+            <input
+              type="text"
               placeholder="Xodim yoki tizim..."
               className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               value={searchTerm}
@@ -235,11 +215,11 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
                   <td className="px-6 py-4 text-slate-400 text-sm">{result.date}</td>
                   <td className="px-6 py-4">
                     <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                      result.status === 'passed' 
-                        ? 'bg-green-100 text-green-700' 
+                      result.status === 'passed'
+                        ? 'bg-green-100 text-green-700'
                         : 'bg-red-100 text-red-700'
                     }`}>
-                      {result.status === 'passed' ? 'O\'tdi' : 'Yiqildi'}
+                      {result.status === 'passed' ? "O'tdi" : 'Yiqildi'}
                     </span>
                   </td>
                 </tr>
@@ -255,7 +235,7 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
           </table>
         </div>
         <div className="p-4 bg-slate-50 border-t border-slate-100 text-center">
-          <button 
+          <button
             onClick={handleExportExcel}
             disabled={filteredResults.length === 0}
             className="text-blue-600 text-sm font-bold hover:underline disabled:text-slate-400 disabled:no-underline"

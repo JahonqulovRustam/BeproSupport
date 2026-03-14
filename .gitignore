@@ -1,9 +1,5 @@
 # Backend
-bepro_support_backend (2)/target/
-bepro_support_backend (2)/.idea/
-bepro_support_backend (2)/.vscode/
-bepro_support_backend (2)/*.log
-bepro_support_backend (2)/bepro-support-backend.iml
+bepro_support_backend (2)/
 
 # Frontend
 frontend/node_modules/

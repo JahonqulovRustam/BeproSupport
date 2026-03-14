@@ -1,26 +1,45 @@
-
 import axios from 'axios';
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://192.168.0.113:8080/api';
+export const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://192.168.0.113:8080';
 
 const apiClient = axios.create({
-    baseURL: BASE_URL,
-    headers: {
-        'Content-Type': 'application/json',
-    },
+  baseURL: BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
 });
 
-// Helper to set basic auth header
-export const setAuthCredentials = (login: string, password: string) => {
-    const credentials = btoa(`${login}:${password}`);
-    apiClient.defaults.headers.common['Authorization'] = `Basic ${credentials}`;
-    localStorage.setItem('bepro_auth', credentials);
-};
+// ─── Request interceptor — attach JWT on every request ───────────────────────
+apiClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem('bepro_jwt');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
 
-// Check for existing auth on load
-const savedAuth = localStorage.getItem('bepro_auth');
-if (savedAuth) {
-    apiClient.defaults.headers.common['Authorization'] = `Basic ${savedAuth}`;
-}
+// ─── Response interceptor — ONE only, handles both logging and 401 ───────────
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    console.error('❌ API Error:', {
+      status: error.response?.status,
+      url: error.config?.url,
+      data: error.response?.data,
+    });
+
+    if (error.response?.status === 401) {
+      localStorage.removeItem('bepro_jwt');
+      localStorage.removeItem('bepro_user');
+      window.location.hash = '/login';
+    }
+
+    return Promise.reject(error);
+  }
+);
+
+export const setAuthCredentials = (_login: string, _password: string) => {
+  // No-op — interceptor handles token automatically
+};
 
 export default apiClient;
