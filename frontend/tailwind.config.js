@@ -1,11 +1,9 @@
-/** @type {import('tailwindcss').Config} */
 export default {
   content: [
     "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
+    "./**/*.{js,ts,jsx,tsx}",  // ← covers all files in frontend/ directly
   ],
-  theme: {
-    extend: {},
-  },
+  darkMode: 'class',
+  theme: { extend: {} },
   plugins: [],
 }

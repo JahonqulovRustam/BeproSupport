@@ -1,7 +1,7 @@
 import apiClient from './apiClient';
 import { User } from '../types';
 
-// ─── Backend types (from Swagger) ────────────────────────────────────────────
+// ─── Backend types ────────────────────────────────────────────────────────────
 interface UserResponse {
   id: number;
   firstName: string;
@@ -18,7 +18,7 @@ interface UserRequest {
   role: 'ADMIN' | 'EMPLOYEE' | 'LEAD';
 }
 
-interface UserUpdate {
+export interface UserUpdate {
   firstName?: string;
   lastName?: string;
   password?: string;
@@ -29,56 +29,40 @@ const mapUser = (u: UserResponse): User => ({
   id: u.id.toString(),
   name: `${u.firstName} ${u.lastName}`.trim(),
   login: u.username,
-  role: u.role === 'ADMIN' ? 'ADMIN' : 'EMPLOYEE',
+  role: u.role,
   avatar: `https://api.dicebear.com/7.x/shapes/svg?seed=${u.username}`,
 });
-
+  
 // ─── Service ──────────────────────────────────────────────────────────────────
 export const userService = {
   async login(login: string, password: string): Promise<User> {
-    // POST /auth/login → returns plain string JWT token
     const authResponse = await apiClient.post<string>('/auth/login', {
       username: login,
       password: password,
     });
 
     const token = authResponse.data;
-    console.log('✅ Token received:', typeof token, token?.substring(0, 30) + '...');
-
-    // Save token — interceptor picks it up for all subsequent requests
     localStorage.setItem('bepro_jwt', token);
     apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
 
-    // Fetch actual user profile for real role, name, id
     try {
       const usersResponse = await apiClient.get<UserResponse[]>('/api/users');
       const me = usersResponse.data.find(u => u.username === login);
-      if (me) {
-        console.log('✅ User profile found:', me);
-        return mapUser(me);
-      }
+      if (me) return mapUser(me);
     } catch (e) {
       console.warn('Could not fetch user profile, using JWT fallback');
     }
 
-    // Fallback — decode role from JWT payload
     let role: 'ADMIN' | 'EMPLOYEE' = 'EMPLOYEE';
     try {
       const payload = JSON.parse(atob(token.split('.')[1]));
-      console.log('🔍 JWT payload:', payload);
       const auth: string = payload.role || payload.roles?.[0] || payload.authorities?.[0]?.authority || '';
       if (auth.includes('ADMIN')) role = 'ADMIN';
     } catch (e) {
       console.warn('Could not decode JWT payload');
     }
 
-    return {
-      id: 'u-remote',
-      name: login,
-      login,
-      role,
-      avatar: `https://api.dicebear.com/7.x/shapes/svg?seed=${login}`,
-    };
+    return { id: 'u-remote', name: login, login, role, avatar: '' };
   },
 
   async getAllUsers(): Promise<User[]> {
@@ -97,12 +81,29 @@ export const userService = {
   },
 
   async updateUser(id: string, update: UserUpdate): Promise<User> {
-    const response = await apiClient.patch<UserResponse>(`/api/users/${id}`, update);
-    return mapUser(response.data);
+    // ✅ Build payload — only include non-empty fields
+    const payload: UserUpdate = {};
+    if (update.firstName?.trim()) payload.firstName = update.firstName.trim();
+    if (update.lastName?.trim())  payload.lastName  = update.lastName.trim();
+    if (update.password?.trim())  payload.password  = update.password.trim();
+
+    const response = await apiClient.patch<UserResponse | void>(
+      `/api/users/${id}`,
+      payload,
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+
+    // ✅ Backend may return 200 with body OR 204 with no body
+    if (response.data && typeof response.data === 'object' && 'id' in response.data) {
+      return mapUser(response.data as UserResponse);
+    }
+
+    // ✅ 204 — refetch the user to get the updated record
+    return userService.getUserById(id);
   },
 
   async deleteUser(id: string): Promise<void> {
-    // Swagger shows id as query param for DELETE /api/users/{id}
-    await apiClient.delete(`/api/users/${id}`, { params: { id } });
+    // ✅ Only path param — no duplicate query param
+    await apiClient.delete(`/api/users/${id}`);
   },
 };

@@ -2,6 +2,80 @@
 @tailwind components;
 @tailwind utilities;
 
-.custom-scrollbar::-webkit-scrollbar { width: 4px; }
-.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+/* ─── Light mode variables ─────────────────────────────────────────────────── */
+:root {
+  --bg-page:        #f8fafc;
+  --bg-card:        #ffffff;
+  --bg-input:       #f8fafc;
+  --border-color:   #e2e8f0;
+  --text-primary:   #0f172a;
+  --text-secondary: #64748b;
+  --text-muted:     #94a3b8;
+}
+
+/* ─── Dark mode variables ──────────────────────────────────────────────────── */
+.dark {
+  --bg-page:        #0f172a;
+  --bg-card:        #1e293b;
+  --bg-input:       #0f172a;
+  --border-color:   #334155;
+  --text-primary:   #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted:     #475569;
+}
+
+/* ─── Base body ────────────────────────────────────────────────────────────── */
+body {
+  background-color: var(--bg-page);
+  color: var(--text-primary);
+  transition: background-color 0.2s, color 0.2s;
+}
+
+/* ─── Dark overrides ───────────────────────────────────────────────────────── */
+.dark .bg-white         { background-color: #1e293b !important; }
+.dark .bg-slate-50      { background-color: #0f172a !important; }
+.dark .bg-slate-100     { background-color: #1e293b !important; }
+.dark .bg-slate-800     { background-color: #0f172a !important; }
+.dark .bg-slate-900     { background-color: #020617 !important; }
+.dark .bg-slate-800\/50 { background-color: rgba(2,6,23,0.5) !important; }
+
+.dark .text-slate-900 { color: #f1f5f9 !important; }
+.dark .text-slate-800 { color: #e2e8f0 !important; }
+.dark .text-slate-700 { color: #cbd5e1 !important; }
+.dark .text-slate-600 { color: #94a3b8 !important; }
+.dark .text-slate-500 { color: #64748b !important; }
+.dark .text-slate-400 { color: #475569 !important; }
+
+.dark .border-slate-100 { border-color: #1e293b !important; }
+.dark .border-slate-200 { border-color: #334155 !important; }
+
+/* ─── Kill bright blue button glow in dark mode ────────────────────────────── */
+.dark .shadow-blue-200,
+.dark [class*="shadow-blue"] {
+  box-shadow: none !important;
+}
+
+/* ─── Softer shadows in dark mode ─────────────────────────────────────────── */
+.dark .shadow-sm  { box-shadow: 0 1px 3px rgba(0,0,0,0.5)  !important; }
+.dark .shadow-md  { box-shadow: 0 4px 10px rgba(0,0,0,0.4) !important; }
+.dark .shadow-lg  { box-shadow: 0 8px 20px rgba(0,0,0,0.4) !important; }
+.dark .shadow-xl  { box-shadow: 0 16px 32px rgba(0,0,0,0.4) !important; }
+.dark .shadow-2xl { box-shadow: 0 24px 48px rgba(0,0,0,0.5) !important; }
+
+/* ─── Inputs ───────────────────────────────────────────────────────────────── */
+.dark input,
+.dark textarea,
+.dark select {
+  background-color: #0f172a !important;
+  border-color: #334155 !important;
+  color: #f1f5f9 !important;
+}
+.dark input::placeholder,
+.dark textarea::placeholder { color: #475569 !important; }
+
+/* ─── Scrollbar ────────────────────────────────────────────────────────────── */
+.custom-scrollbar::-webkit-scrollbar        { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track  { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb  { background: #cbd5e1; border-radius: 999px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+.dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; }

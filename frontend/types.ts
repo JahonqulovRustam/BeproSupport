@@ -1,5 +1,5 @@
 
-export type UserRole = 'ADMIN' | 'EMPLOYEE';
+export type UserRole = 'ADMIN' | 'EMPLOYEE' | 'LEAD';
 
 export interface Question {
   id: string;
@@ -17,12 +17,19 @@ export interface Lesson {
   media: Media[];
 }
 
+export interface SubModule {
+  id: string;
+  name: string;
+  lessons: Lesson[];
+}
+
 export interface SystemModule {
   id: string;
   name: string;
   icon: string;
   description: string;
-  lessons: Lesson[];
+  subModules?: SubModule[];
+  lessons?: Lesson[]; // legacy support
 }
 
 export interface Media {

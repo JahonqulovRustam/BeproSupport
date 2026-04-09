@@ -1,5 +1,5 @@
 import apiClient from './apiClient';
-import { SystemModule, Lesson, Question, Media } from '../types';
+import { SystemModule, Lesson, Question, Media, SubModule } from '../types';
 
 // ─── Backend response types (from Swagger) ───────────────────────────────────
 interface MediaResponse {
@@ -21,14 +21,24 @@ interface LessonResponse {
   description: string;
   questions: QuestionResponse[];
   module: number;
+  subModule?: number;
   media: MediaResponse[];
+}
+
+interface SubModuleResponse {
+  id: number;
+  name: string;
+  moduleResponse: number;
+  lessons: LessonResponse[];
 }
 
 interface ModuleResponse {
   id: number;
   title: string;
   description: string;
-  lessons: LessonResponse[];
+  icon?: string;
+  subModules?: SubModuleResponse[];
+  lessons?: LessonResponse[];
 }
 
 interface ModuleRequest {
@@ -59,11 +69,18 @@ const mapLesson = (l: LessonResponse): Lesson => ({
   media: (l.media || []).map(mapMedia),
 });
 
+const mapSubModule = (s: SubModuleResponse): SubModule => ({
+  id: s.id.toString(),
+  name: s.name,
+  lessons: (s.lessons || []).map(mapLesson),
+});
+
 const mapModule = (m: ModuleResponse): SystemModule => ({
   id: m.id.toString(),
   name: m.title,
   description: m.description,
-  icon: 'fa-server',
+  icon: m.icon || 'fa-folder',
+  subModules: (m.subModules || []).map(mapSubModule),
   lessons: (m.lessons || []).map(mapLesson),
 });
 
@@ -79,8 +96,15 @@ export const moduleService = {
     return mapModule(response.data);
   },
 
-  async createModule(module: ModuleRequest): Promise<SystemModule> {
+  async createModule(module: ModuleRequest & { icon?: string }): Promise<SystemModule> {
+    // Send icon as well if provided
     const response = await apiClient.post<ModuleResponse>('/api/modules', module);
+    return mapModule(response.data);
+  },
+
+  async updateModule(id: string, data: { title: string; description: string; icon?: string }): Promise<SystemModule> {
+    // Send icon as well if provided
+    const response = await apiClient.put<ModuleResponse>(`/api/modules/${id}`, data);
     return mapModule(response.data);
   },
 
@@ -96,10 +120,16 @@ export const moduleService = {
   },
 
   // POST /api/lessons (multipart/form-data)
+  async createSubModule(subModuleData: { name: string; systemModuleId: number }): Promise<SubModule> {
+    const response = await apiClient.post<SubModuleResponse>('/api/modules/sub', subModuleData);
+    return mapSubModule(response.data);
+  },
+
   async createLesson(lessonData: {
     title: string;
     description: string;
     moduleId: number;
+    subModuleId?: number;
     questions?: { text: string; options: string[]; correctAns: string }[];
     externalMedia?: { externalUrl: string; type: 'VIDEO' | 'IMAGE' | 'OTHER' }[];
   }, files: File[]): Promise<Lesson> {
