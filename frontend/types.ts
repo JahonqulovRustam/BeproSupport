@@ -13,14 +13,16 @@ export interface Lesson {
   title: string;
   videoUrl: string;
   description: string;
-  questions: Question[];
-  media: Media[];
+  media?: Media[];
+  quizId?: string; // Reference to quiz if this lesson has one
 }
 
 export interface SubModule {
   id: string;
   name: string;
+  moduleResponse?: string; // Module ID reference from API
   lessons: Lesson[];
+  quizResponse?: Quiz | null; // Quiz for this sub-module if exists
 }
 
 export interface SystemModule {
@@ -29,13 +31,20 @@ export interface SystemModule {
   icon: string;
   description: string;
   subModules?: SubModule[];
-  lessons?: Lesson[]; // legacy support
+  lessons: Lesson[]; // All lessons at module level
 }
 
 export interface Media {
   id: string;
   type: 'VIDEO' | 'IMAGE' | 'OTHER';
   url: string;
+}
+
+export interface Quiz {
+  id: string;
+  name: string;
+  questions: Question[];
+  subModuleId: string;
 }
 
 export interface UserProgress {
@@ -50,6 +59,5 @@ export interface User {
   login: string;
   password?: string;
   role: UserRole;
-  avatar: string;
   allowedModules?: string[]; // IDs of modules this user can access
 }

@@ -137,7 +137,19 @@ const App: React.FC = () => {
   };
 
   // ─── Module management ───────────────────────────────────────────────────────
-  const handleSelectModule = (id: string) => { setActiveModuleId(id); setView('CONTENT'); };
+  const handleSelectModule = async (id: string) => {
+    setActiveModuleId(id);
+    if (currentUser?.role === 'ADMIN') setView('MANAGE');
+    else setView('CONTENT');
+    
+    // Fetch full module data with subModules and lessons
+    try {
+      const fullModule = await moduleService.getModuleById(id);
+      setModules(prev => prev.map(m => m.id === id ? fullModule : m));
+    } catch (err) {
+      console.error('Modul ma\'lumotlarini yuklashda xatolik:', err);
+    }
+  };
   const handleUpdateModule = (u: SystemModule) => setModules(prev => prev.map(m => m.id === u.id ? u : m));
   const handleAddModule = (m: SystemModule) => {
     setModules(prev => [...prev, m]);
@@ -259,20 +271,10 @@ const App: React.FC = () => {
         // ✅ Admin-only: manage lessons and media for the active module
         if (!isAdmin || !activeModule) return emptyState;
         return (
-          <div className="space-y-4">
-            <div className="flex justify-end">
-              <button
-                onClick={() => setView('CONTENT')}
-                className="px-5 py-2.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl font-bold text-sm hover:bg-slate-200 dark:hover:bg-slate-600 transition-all flex items-center gap-2"
-              >
-                <i className="fas fa-eye"></i> Ko'rish rejimiga qaytish
-              </button>
-            </div>
-            <AdminContentManager
-              module={activeModule}
-              onUpdateModule={handleUpdateModule}
-            />
-          </div>
+          <AdminContentManager
+            module={activeModule}
+            onUpdateModule={handleUpdateModule}
+          />
         );
 
       case 'CONTENT':
@@ -283,8 +285,6 @@ const App: React.FC = () => {
             module={activeModule}
             currentUser={currentUser}
             onTakeTest={setActiveLessonForQuiz}
-            onUpdateModule={handleUpdateModule}
-            onManage={isAdmin ? () => setView('MANAGE') : undefined}
           />
         );
     }

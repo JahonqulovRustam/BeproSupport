@@ -90,8 +90,39 @@ const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
+          {/* Dashboard Section */}
+          <div>
+            {!isCollapsed && (
+              <p className="text-xs font-semibold text-slate-500 uppercase px-2 mb-2">
+                Dashboard
+              </p>
+            )}
+
+            {onViewDashboard && (
+              <button
+                onClick={onViewDashboard}
+                title={isCollapsed ? 'Natijalar' : undefined}
+                className={navBtn(activeView === 'DASHBOARD')}
+              >
+                <i className="fas fa-chart-line w-5 text-center flex-shrink-0"></i>
+                {!isCollapsed && <span>Natijalar</span>}
+              </button>
+            )}
+
+            {onViewMyResults && (
+              <button
+                onClick={onViewMyResults}
+                title={isCollapsed ? 'Mening natijalarim' : undefined}
+                className={navBtn(activeView === 'MY_RESULTS')}
+              >
+                <i className="fas fa-user-check w-5 text-center flex-shrink-0"></i>
+                {!isCollapsed && <span>Mening natijalarim</span>}
+              </button>
+            )}
+          </div>
+
           {!isCollapsed && (
-            <p className="text-xs font-semibold text-slate-500 uppercase px-2 mb-2">
+            <p className="text-xs font-semibold text-slate-500 uppercase px-2 mb-2 pt-4">
               Tizimlar va Modullar
             </p>
           )}
@@ -101,7 +132,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               key={module.id}
               onClick={() => onSelectModule(module.id)}
               title={isCollapsed ? module.name : undefined}
-              className={navBtn(isContentView && activeModuleId === module.id)}
+              className={navBtn(activeModuleId === module.id)}
             >
               <i className={`fas ${module.icon} w-5 text-center flex-shrink-0`}></i>
               {!isCollapsed && <span className="truncate">{module.name}</span>}
@@ -114,6 +145,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             </p>
           )}
 
+          {/* Management Section */}
           <div className="pt-4">
             {!isCollapsed && (
               <p className="text-xs font-semibold text-slate-500 uppercase px-2 mb-2">
@@ -132,17 +164,6 @@ const Sidebar: React.FC<SidebarProps> = ({
               </button>
             )}
 
-            {onViewDashboard && (
-              <button
-                onClick={onViewDashboard}
-                title={isCollapsed ? 'Umumiy statistika' : undefined}
-                className={navBtn(activeView === 'DASHBOARD')}
-              >
-                <i className="fas fa-chart-line w-5 text-center flex-shrink-0"></i>
-                {!isCollapsed && <span>Umumiy statistika</span>}
-              </button>
-            )}
-
             {role === 'ADMIN' && onViewUsers && (
               <button
                 onClick={onViewUsers}
@@ -154,23 +175,16 @@ const Sidebar: React.FC<SidebarProps> = ({
               </button>
             )}
 
-            <button
-              onClick={onViewMyResults}
-              title={isCollapsed ? 'Mening natijalarim' : undefined}
-              className={navBtn(activeView === 'MY_RESULTS')}
-            >
-              <i className="fas fa-user-check w-5 text-center flex-shrink-0"></i>
-              {!isCollapsed && <span>Mening natijalarim</span>}
-            </button>
-
-            <button
-              onClick={onViewSettings}
-              title={isCollapsed ? 'Sozlamalar' : undefined}
-              className={navBtn(activeView === 'SETTINGS')}
-            >
-              <i className="fas fa-gear w-5 text-center flex-shrink-0"></i>
-              {!isCollapsed && <span>Sozlamalar</span>}
-            </button>
+            {onViewSettings && (
+              <button
+                onClick={onViewSettings}
+                title={isCollapsed ? 'Sozlamalar' : undefined}
+                className={navBtn(activeView === 'SETTINGS')}
+              >
+                <i className="fas fa-gear w-5 text-center flex-shrink-0"></i>
+                {!isCollapsed && <span>Sozlamalar</span>}
+              </button>
+            )}
           </div>
         </nav>
 

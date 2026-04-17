@@ -1,0 +1,169 @@
+import apiClient from './apiClient';
+import { Quiz, Question } from '../types';
+
+// ─── Backend response types (from OpenAPI spec) ────────────────────────────────
+interface QuestionResponse {
+  id: number;
+  text: string;
+  options: string[];
+  correctAns: string;
+  subModule: string;
+}
+
+interface QuizResponse {
+  id: number;
+  name: string;
+  questions: QuestionResponse[];
+}
+
+interface QuestionRequestBody {
+  text: string;
+  options: string[];
+  correctAns: string;
+}
+
+interface QuizRequestWithQuestions {
+  name: string;
+  subModule_id: number;
+  questionRequests: QuestionRequestBody[];
+}
+
+interface QuizRequestBasic {
+  name: string;
+  subModule_id: number;
+}
+
+interface QuestionRequest {
+  text: string;
+  options: string[];
+  correctAns: string;
+  subModule: number;
+}
+
+// ─── Mappers ──────────────────────────────────────────────────────────────────
+const mapQuestion = (q: QuestionResponse): Question => ({
+  id: q.id.toString(),
+  text: q.text,
+  options: q.options,
+  correctAnswer: q.options.indexOf(q.correctAns),
+});
+
+const mapQuiz = (q: QuizResponse, subModuleId?: string): Quiz => ({
+  id: q.id.toString(),
+  name: q.name,
+  questions: (q.questions || []).map(mapQuestion),
+  subModuleId: subModuleId || '',
+});
+
+// ─── Service ──────────────────────────────────────────────────────────────────
+export const quizService = {
+  /**
+   * Create a new quiz with questions in one call
+   * POST /api/quiz
+   * @param name Quiz name
+   * @param subModuleId Sub-module ID
+   * @param questions Array of question objects with text, options, and correctAns
+   */
+  async createQuizWithQuestions(
+    name: string,
+    subModuleId: number,
+    questions: QuestionRequestBody[] = []
+  ): Promise<Quiz> {
+    const payload: QuizRequestWithQuestions = {
+      name,
+      subModule_id: subModuleId,
+      questionRequests: questions,
+    };
+    const response = await apiClient.post<QuizResponse>('/api/quiz', payload);
+    return mapQuiz(response.data, subModuleId.toString());
+  },
+
+  /**
+   * Create a new quiz for a sub-module (without questions)
+   * POST /api/quiz
+   */
+  async createQuiz(name: string, subModuleId: number): Promise<Quiz> {
+    const payload: QuizRequest = {
+      name,
+      subModule_id: subModuleId,
+    };
+    const response = await apiClient.post<QuizResponse>('/api/quiz', payload);
+    return mapQuiz(response.data, subModuleId.toString());
+  },
+
+  /**
+   * Get quiz by ID
+   * GET /api/quiz/{id}
+   */
+  async getQuizById(id: number): Promise<Quiz> {
+    const response = await apiClient.get<QuizResponse>(`/api/quiz/${id}`);
+    return mapQuiz(response.data);
+  },
+
+  /**
+   * Create a question for a quiz/sub-module
+   * POST /api/questions
+   */
+  async createQuestion(
+    text: string,
+    options: string[],
+    correctAnswer: string,
+    subModuleId: number
+  ): Promise<Question> {
+    const payload: QuestionRequest = {
+      text,
+      options,
+      correctAns: correctAnswer,
+      subModule: subModuleId,
+    };
+    const response = await apiClient.post<QuestionResponse>('/api/questions', payload);
+    return mapQuestion(response.data);
+  },
+
+  /**
+   * Get all questions
+   * GET /api/questions
+   */
+  async getAllQuestions(): Promise<Question[]> {
+    const response = await apiClient.get<QuestionResponse[]>('/api/questions');
+    return response.data.map(mapQuestion);
+  },
+
+  /**
+   * Update a question by ID
+   * PUT /api/questions/{id}
+   */
+  async updateQuestion(
+    id: number,
+    text: string,
+    options: string[],
+    correctAnswer: string,
+    subModuleId: number
+  ): Promise<Question> {
+    const payload: QuestionRequest = {
+      text,
+      options,
+      correctAns: correctAnswer,
+      subModule: subModuleId,
+    };
+    const response = await apiClient.put<QuestionResponse>(`/api/questions/${id}`, payload);
+    return mapQuestion(response.data);
+  },
+
+  /**
+   * Get all questions for a quiz
+   * GET /api/quiz/{quiz_id}/questions
+   */
+  async getQuizQuestions(quizId: string | number): Promise<Question[]> {
+    const response = await apiClient.get<QuestionResponse[]>(`/api/quiz/${quizId}/questions`);
+    return response.data.map(mapQuestion);
+  },
+
+  /**
+   * Delete a question by ID
+   * DELETE /api/questions/{id}
+   */
+  async deleteQuestion(id: number): Promise<void> {
+    await apiClient.delete(`/api/questions/${id}`);
+  },
+};
