@@ -16,7 +16,7 @@ const SidebarModules: React.FC<SidebarModulesProps> = ({ modules, onSelectModule
           <button
             key={mod.id}
             onClick={() => onSelectModule(mod)}
-            className={`w-full text-left px-4 py-2 rounded-xl border transition-all font-semibold ${selectedModuleId === mod.id ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-700 border-slate-200 hover:bg-blue-50 hover:text-blue-700'}`}
+            className={`w-full text-left px-4 py-2 rounded-xl border transition-all font-semibold ${selectedModuleId === mod.id ? 'bg-orange-600 text-white border-orange-600' : 'bg-white text-slate-700 border-slate-200 hover:bg-orange-50 hover:text-orange-700'}`}
           >
             {mod.name}
           </button>

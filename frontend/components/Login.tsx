@@ -59,13 +59,18 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl p-10 w-full max-w-md border border-transparent dark:border-slate-700">
 
         {/* Logo */}
-        <div className="w-20 h-20 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-8 shadow-xl shadow-blue-500/20">
-          <i className="fas fa-graduation-cap text-white text-4xl"></i>
+        <div className="flex justify-center mb-10">
+          <img src="https://bepro.uz/wp-content/uploads/2024/07/logotype-horizontal.png" alt="BePro" className="h-16 w-auto object-contain" onError={(e) => {
+            const target = e.target as HTMLImageElement;
+            target.style.display = 'none';
+            if (target.nextElementSibling) {
+              (target.nextElementSibling as HTMLElement).style.display = 'block';
+            }
+          }} />
+          <h1 className="hidden text-3xl font-bold text-orange-600 mb-2 text-center">
+            BePro
+          </h1>
         </div>
-
-        <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-2 text-center">
-          Bepro support
-        </h1>
         <p className="text-slate-500 dark:text-slate-400 mb-10 text-center">
           Tizimga kirish uchun login va parolingizni kiriting
         </p>
@@ -85,7 +90,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 type="text"
                 value={login}
                 onChange={e => { setLogin(e.target.value); setErrorType(null); }}
-                className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-600 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all"
                 placeholder="Loginni kiriting"
                 required
               />
@@ -105,7 +110,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 type={showPass ? 'text' : 'password'}
                 value={password}
                 onChange={e => { setPassword(e.target.value); setErrorType(null); }}
-                className="w-full pl-12 pr-11 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                className="w-full pl-12 pr-11 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-600 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none transition-all"
                 placeholder="Parolni kiriting"
                 required
               />
@@ -137,7 +142,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
           <button
             type="submit"
             disabled={loading}
-            className={`w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl transition-all active:scale-[0.98] ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
+            className={`w-full py-4 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-2xl transition-all active:scale-[0.98] ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
           >
             {loading ? (
               <span className="flex items-center justify-center gap-2">

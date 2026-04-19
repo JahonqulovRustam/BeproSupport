@@ -27,6 +27,7 @@ export interface CreateQuizParams {
 }
 
 export interface CreateQuestionParams {
+  quizId: number | string;
   text: string;
   options: string[];
   correctAnswer: string;
@@ -134,6 +135,7 @@ export const creationService = {
   async createQuestion(params: CreateQuestionParams): Promise<Question> {
     try {
       return await quizService.createQuestion(
+        params.quizId,
         params.text,
         params.options,
         params.correctAnswer,
@@ -214,14 +216,14 @@ export const creationService = {
    */
   async createQuizWorkflow(
     quiz: CreateQuizParams,
-    questions: CreateQuestionParams[]
+    questions: Omit<CreateQuestionParams, 'quizId'>[]
   ): Promise<Quiz> {
     try {
       const createdQuiz = await this.createQuiz(quiz);
 
       // Add questions to quiz
       const createdQuestions = await Promise.all(
-        questions.map((q) => this.createQuestion(q))
+        questions.map((q) => this.createQuestion({ ...q, quizId: createdQuiz.id }))
       );
 
       return {

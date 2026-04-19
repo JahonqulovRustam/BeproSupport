@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { SystemModule, Lesson, Question } from '../types';
 import { moduleService } from '../services/moduleService';
 import { quizService } from '../services/quizService';
 import { API_BASE_URL } from '../services/config';
+import QuizSolver from './QuizSolver';
 
 interface AdminContentManagerProps {
   module: SystemModule;
@@ -67,7 +69,8 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
   const [quizQuestions, setQuizQuestions] = useState<Question[]>([]);
   const [quizCurrentQuestion, setQuizCurrentQuestion] = useState<Partial<Question>>({ text: '', options: ['', '', '', ''], correctAnswer: 0 });
 
-  const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
+  const [lessonTab, setLessonTab] = useState<'BASIC' | 'MEDIA'>('BASIC');
+  const [isUploadingMedia, setIsUploadingMedia] = useState(false);
   const [externalUrl, setExternalUrl] = useState('');
   const [externalType, setExternalType] = useState<'VIDEO' | 'IMAGE' | 'OTHER'>('VIDEO');
   const [isUploading, setIsUploading] = useState(false);
@@ -80,6 +83,97 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
   const [collapsed, setCollapsed] = useState<Record<string | number, boolean>>({});
   const [selectedSubModuleId, setSelectedSubModuleId] = useState<string | number | null>(subModules[0]?.id ?? null);
   const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
+  const [selectedQuiz, setSelectedQuiz] = useState<any | null>(null);
+
+  // --- Modal Delete State ---
+  const [itemToDelete, setItemToDelete] = useState<{ id: string | number; type: 'SUB_MODULE' | 'LESSON' | 'QUIZ' | 'QUESTION' | 'MEDIA'; name: string, quizSubModuleId?: string | number, extraId?: string | number } | null>(null);
+
+  // --- Quiz Questions Modal States ---
+  const [managingQuiz, setManagingQuiz] = useState<{ quiz: any, subModuleId: string | number } | null>(null);
+  const [editingQuestionId, setEditingQuestionId] = useState<string | number | 'new' | null>(null);
+  const [questionForm, setQuestionForm] = useState<{ text: string; options: string[]; correctAnswer: number }>({ text: '', options: ['', '', '', ''], correctAnswer: 0 });
+  const [isSavingQuestion, setIsSavingQuestion] = useState(false);
+
+  const closeTopModal = () => {
+    if (managingQuiz) {
+      setManagingQuiz(null);
+      setEditingQuestionId(null);
+      return;
+    }
+
+    if (itemToDelete) {
+      setItemToDelete(null);
+      return;
+    }
+
+    if (isAddPanelOpen) {
+      setIsAddPanelOpen(false);
+      resetForm();
+    }
+  };
+
+  useEffect(() => {
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeTopModal();
+      }
+    };
+    if (isAddPanelOpen || itemToDelete || managingQuiz) {
+      window.addEventListener('keydown', handleEsc);
+      return () => window.removeEventListener('keydown', handleEsc);
+    }
+    return undefined;
+  }, [isAddPanelOpen, itemToDelete, managingQuiz]);
+
+  useEffect(() => {
+    if (isAddPanelOpen || itemToDelete || managingQuiz) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isAddPanelOpen, itemToDelete, managingQuiz]);
+
+  const handleSaveQuestion = async (subModuleId: number, quizId: number | string) => {
+    if (!questionForm.text.trim()) {
+      alert("Savol matnini kiriting!");
+      return;
+    }
+    if (questionForm.options.some(opt => !opt.trim())) {
+      alert("Barcha variantlarni kiriting!");
+      return;
+    }
+    
+    try {
+      setIsSavingQuestion(true);
+      const correctAnsStr = questionForm.options[questionForm.correctAnswer];
+      if (editingQuestionId === 'new') {
+        await quizService.createQuestion(quizId, questionForm.text, questionForm.options, correctAnsStr, subModuleId);
+      } else if (editingQuestionId) {
+        await quizService.updateQuestion(quizId, Number(editingQuestionId), questionForm.text, questionForm.options, correctAnsStr, subModuleId);
+      }
+      
+      const fullModule = await moduleService.getModuleById(module.id);
+      const normalized = normalizeSubModules(fullModule);
+      setSubModules(normalized);
+      const freshSub = normalized.find(s => s.id === subModuleId);
+      if (freshSub && freshSub.quizResponse) {
+        setManagingQuiz({ quiz: freshSub.quizResponse, subModuleId });
+      }
+      setEditingQuestionId(null);
+    } catch (err) {
+      console.error('Failed to save question:', err);
+      alert("Savolni saqlashda xatolik yuz berdi");
+    } finally {
+      setIsSavingQuestion(false);
+    }
+  };
+
+  const handleDeleteQuestion = (qId: number, quizId: number | string, subModuleId: number | string) => {
+    setItemToDelete({ id: qId, type: 'QUESTION', name: 'Savol', extraId: quizId, quizSubModuleId: subModuleId });
+  };
 
   useEffect(() => {
     const fetchModuleData = async () => {
@@ -111,92 +205,98 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
     setQuizDescription('');
     setQuizQuestions([]);
     setQuizCurrentQuestion({ text: '', options: ['', '', '', ''], correctAnswer: 0 });
-    setMediaItems([]);
     setExternalUrl('');
     setExternalType('VIDEO');
     setEditingLessonId(null);
     setExistingMedia([]);
     setLessonSubModuleId(null);
+    setLessonTab('BASIC');
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []) as File[];
-    const newItems: InternalMediaItem[] = files.map(file => ({
-      kind: 'internal', file, id: `internal-${Date.now()}-${Math.random()}`,
-    }));
-    setMediaItems(prev => [...prev, ...newItems]);
-    e.target.value = '';
+    if (!editingLessonId || files.length === 0) return;
+    
+    setIsUploadingMedia(true);
+    try {
+      for (const file of files) {
+        const uploaded = await moduleService.uploadMedia(editingLessonId, file);
+        setExistingMedia(prev => [...prev, { id: String(uploaded.id), type: uploaded.type, url: uploaded.url }]);
+      }
+      const updatedModule = await moduleService.getModuleById(module.id);
+      onUpdateModule(updatedModule);
+    } catch (err) {
+      console.error("File upload error:", err);
+      alert("Fayllarni yuklashda xatolik yuz berdi");
+    } finally {
+      setIsUploadingMedia(false);
+      e.target.value = '';
+    }
   };
 
-  const handleAddExternal = () => {
-    if (!externalUrl.trim()) return;
-    const item: ExternalMediaItem = {
-      kind: 'external', url: externalUrl.trim(), type: externalType,
-      id: `external-${Date.now()}`,
-    };
-    setMediaItems(prev => [...prev, item]);
-    setExternalUrl('');
+  const handleAddExternal = async () => {
+    if (!externalUrl.trim() || !editingLessonId) return;
+    
+    setIsUploadingMedia(true);
+    try {
+      const added = await moduleService.addExternalMedia(editingLessonId, externalUrl.trim(), externalType);
+      setExistingMedia(prev => [...prev, { id: String(added.id), type: added.type, url: added.url }]);
+      
+      const updatedModule = await moduleService.getModuleById(module.id);
+      onUpdateModule(updatedModule);
+      setExternalUrl('');
+    } catch (err) {
+      console.error("External media error:", err);
+      alert("Havolani qo'shishda xatolik yuz berdi");
+    } finally {
+      setIsUploadingMedia(false);
+    }
   };
-
-  const handleRemoveMedia = (id: string) => setMediaItems(prev => prev.filter(m => m.id !== id));
 
   // ─── Delete existing media from server ───────────────────────────────────
-  const handleDeleteExistingMedia = async (mediaId: string) => {
-    if (!window.confirm("Bu media faylni o'chirishni istaysizmi?")) return;
-    setDeletingMediaId(mediaId);
-    try {
-      await moduleService.deleteMedia(mediaId);
-      setExistingMedia(prev => prev.filter(m => m.id !== mediaId));
-    } catch {
-      alert("Media o'chirishda xatolik yuz berdi");
-    } finally {
-      setDeletingMediaId(null);
-    }
+  const handleDeleteExistingMedia = (mediaId: string) => {
+    setItemToDelete({ id: mediaId, type: 'MEDIA', name: 'Media fayl' });
   };
 
   const handleAddLesson = async () => {
     if (!newLesson.title) { alert('Dars sarlavhasi kiritilishi shart'); return; }
     if (!editingLessonId && !lessonSubModuleId) { 
-      alert('Sub-modulni tanlasiniz'); 
+      alert('Sub-modulni tanlang'); 
       return; 
-    }
-    if (!editingLessonId && mediaItems.length === 0) {
-      alert("Kamida bitta media (fayl yoki havola) qo'shilishi shart");
-      return;
     }
 
     setIsUploading(true);
     try {
       if (editingLessonId) {
-        // EDIT: Use PUT (JSON)
+        // EDIT: Update metadata
         await moduleService.updateLesson(editingLessonId, {
           title: newLesson.title!,
           description: newLesson.description || '',
         });
+        
+        const updatedModule = await moduleService.getModuleById(module.id);
+        onUpdateModule(updatedModule);
+        resetForm();
+        setIsAddPanelOpen(false);
+        setAddMode('LESSON');
       } else {
-        // ADD: Use POST (multipart/form-data)
-        const internalFiles = mediaItems
-          .filter((m): m is InternalMediaItem => m.kind === 'internal')
-          .map(m => m.file);
-
-        const externalMedia = mediaItems
-          .filter((m): m is ExternalMediaItem => m.kind === 'external')
-          .map(m => ({ externalUrl: m.url, type: m.type }));
-
-        await moduleService.createLesson(
+        // CREATE: Only save metadata first, switch to MEDIA tab on success
+        const created = await moduleService.createLesson(
           newLesson.title!,
           newLesson.description || '',
           parseInt(module.id),
           lessonSubModuleId ? parseInt(String(lessonSubModuleId)) : undefined,
-          internalFiles,
-          externalMedia
+          [], // No files upfront
+          []
         );
+        
+        const updatedModule = await moduleService.getModuleById(module.id);
+        onUpdateModule(updatedModule);
+        
+        // Transition to media upload state automatically
+        setEditingLessonId(String(created.id));
+        setLessonTab('MEDIA');
       }
-      const updatedModule = await moduleService.getModuleById(module.id);
-      onUpdateModule(updatedModule);
-      resetForm();
-      setIsAddPanelOpen(false);
-      setAddMode('LESSON');
     } catch (error) {
       console.error('Darsni saqlashda xatolik:', error);
       alert('Darsni saqlashda xatolik yuz berdi');
@@ -258,26 +358,54 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
     }
   };
 
-  const handleDeleteLesson = async (lessonId: string) => {
-    if (!window.confirm("Darsni o'chirishni istaysizmi? Bu amal qaytarilmaydi.")) return;
+  const confirmDelete = async () => {
+    if (!itemToDelete) return;
     try {
-      await moduleService.deleteLesson(lessonId);
-      const updatedModule = await moduleService.getModuleById(module.id);
-      onUpdateModule(updatedModule);
+      if (itemToDelete.type === 'LESSON') {
+        await moduleService.deleteLesson(String(itemToDelete.id));
+        const updatedModule = await moduleService.getModuleById(module.id);
+        onUpdateModule(updatedModule);
+      } else if (itemToDelete.type === 'SUB_MODULE') {
+        await moduleService.deleteSubModule(String(itemToDelete.id));
+        const updatedModule = await moduleService.getModuleById(module.id);
+        onUpdateModule(updatedModule);
+      } else if (itemToDelete.type === 'QUIZ') {
+        console.log('Delete quiz API needed:', itemToDelete.id);
+        const updatedModule = await moduleService.getModuleById(module.id);
+        onUpdateModule(updatedModule);
+      } else if (itemToDelete.type === 'QUESTION') {
+        await quizService.deleteQuestion(itemToDelete.extraId as string | number, itemToDelete.id as number);
+        const fullModule = await moduleService.getModuleById(module.id);
+        const normalized = normalizeSubModules(fullModule);
+        setSubModules(normalized);
+        const freshSub = normalized.find(s => s.id === itemToDelete.quizSubModuleId);
+        if (freshSub && freshSub.quizResponse) {
+          setManagingQuiz({ quiz: freshSub.quizResponse, subModuleId: itemToDelete.quizSubModuleId as string | number });
+        }
+      } else if (itemToDelete.type === 'MEDIA') {
+        setDeletingMediaId(String(itemToDelete.id));
+        await moduleService.deleteMedia(String(itemToDelete.id));
+        setExistingMedia(prev => prev.filter(m => m.id !== String(itemToDelete.id)));
+        setDeletingMediaId(null);
+      }
     } catch {
-      alert("Darsni o'chirishda xatolik yuz berdi");
+      alert("O'chirishda xatolik yuz berdi");
+      setDeletingMediaId(null);
+    } finally {
+      setItemToDelete(null);
     }
   };
 
-  const handleDeleteSubModule = async (subModuleId: string | number) => {
-    if (!window.confirm("Sub-modulni o'chirishni istaysizmi? Bu amal qaytarilmaydi.")) return;
-    try {
-      await moduleService.deleteSubModule(String(subModuleId));
-      const updatedModule = await moduleService.getModuleById(module.id);
-      onUpdateModule(updatedModule);
-    } catch {
-      alert("Sub-modulni o'chirishda xatolik yuz berdi");
-    }
+  const handleDeleteLesson = (lesson: Lesson) => {
+    setItemToDelete({ id: lesson.id, type: 'LESSON', name: lesson.title });
+  };
+
+  const handleDeleteSubModule = (subModule: AdminSubModule) => {
+    setItemToDelete({ id: subModule.id, type: 'SUB_MODULE', name: subModule.name });
+  };
+
+  const handleDeleteQuiz = (quiz: any, subModuleId: string | number) => {
+    setItemToDelete({ id: quiz.id, type: 'QUIZ', name: quiz.name, quizSubModuleId: subModuleId });
   };
 
   const handleEditSubModule = (subModule: AdminSubModule) => {
@@ -304,7 +432,7 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
   const handleEditLesson = (lesson: Lesson) => {
     setEditingLessonId(lesson.id);
     setNewLesson(lesson);
-    setMediaItems([]);
+    setLessonTab('BASIC');
     // Populate existing media from the lesson
     setExistingMedia((lesson.media || []).map((m: any) => ({
       id: String(m.id),
@@ -318,13 +446,13 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
 
 
   const fileIcon = (file: File) => {
-    if (file.type.startsWith('video/')) return 'fa-file-video text-blue-500';
+    if (file.type.startsWith('video/')) return 'fa-file-video text-orange-500';
     if (file.type.startsWith('image/')) return 'fa-file-image text-green-500';
     return 'fa-file text-slate-400';
   };
 
   const mediaTypeIcon = (type: string) => {
-    if (type === 'VIDEO') return 'fa-film text-blue-500';
+    if (type === 'VIDEO') return 'fa-film text-orange-500';
     if (type === 'IMAGE') return 'fa-image text-green-500';
     return 'fa-file-alt text-slate-400';
   };
@@ -335,7 +463,7 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
     return token ? `${fullUrl}?token=${encodeURIComponent(token)}` : fullUrl;
   };
 
-  const PreviewMediaRenderer: React.FC<{ media: MediaItem; title: string }> = ({ media, title }) => {
+  const renderMedia = (media: MediaItem, title: string) => {
     if (media.kind === 'internal') {
       return (
         <div className="w-full h-full flex items-center justify-center text-white text-lg">
@@ -388,38 +516,60 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
   const currentSubModule = subModules.find((sub) => sub.id === selectedSubModuleId) || subModules[0] || null;
   const currentVisibleLessons = currentSubModule ? currentSubModule.lessons : [];
 
-  const currentMediaList = selectedLesson ? [
-    ...((Array.isArray((selectedLesson as any).media) ? (selectedLesson as any).media : []) as any[]).map((item) => ({ kind: 'external' as const, id: item.id || item.url, type: item.type, url: item.url })),
-    ...(selectedLesson.videoUrl ? [{ kind: 'external' as const, id: `video-${selectedLesson.id}`, type: 'VIDEO' as const, url: selectedLesson.videoUrl }] : []),
-  ] : [];
+  const currentMediaList = (() => {
+    if (!selectedLesson) return [];
+    const list: any[] = [];
+    const addedUrls = new Set<string>();
+    const mediaArray = Array.isArray((selectedLesson as any).media) ? (selectedLesson as any).media : [];
+    for (const item of mediaArray) {
+      if (item?.url && !addedUrls.has(item.url)) {
+        addedUrls.add(item.url);
+        list.push({ kind: 'external' as const, id: item.id || item.url, type: item.type, url: item.url });
+      }
+    }
+    if (selectedLesson.videoUrl && !addedUrls.has(selectedLesson.videoUrl)) {
+      addedUrls.add(selectedLesson.videoUrl);
+      list.push({ kind: 'external' as const, id: `video-${selectedLesson.id}`, type: 'VIDEO' as const, url: selectedLesson.videoUrl });
+    }
+    return list;
+  })();
 
   const currentMedia = currentMediaList[0] || null;
 
   useEffect(() => {
     if (!currentSubModule) return;
     const visible = currentVisibleLessons;
-    if (!visible.length) {
-      setSelectedLesson(null);
-      return;
-    }
-    if (!selectedLesson || !visible.some((lesson) => lesson.id === selectedLesson.id)) {
-      setSelectedLesson(visible[0]);
+    
+    const hasValidLesson = selectedLesson && visible.some((lesson) => lesson.id === selectedLesson.id);
+    const hasValidQuiz = selectedQuiz && currentSubModule.quizResponse?.id === selectedQuiz.id;
+    
+    if (!hasValidLesson && !hasValidQuiz) {
+      if (visible.length > 0) {
+        setSelectedLesson(visible[0]);
+        setSelectedQuiz(null);
+      } else if (currentSubModule.quizResponse) {
+        setSelectedQuiz(currentSubModule.quizResponse);
+        setSelectedLesson(null);
+      } else {
+        setSelectedLesson(null);
+        setSelectedQuiz(null);
+      }
       setSelectedSubModuleId(currentSubModule.id);
     }
-  }, [currentSubModule, currentVisibleLessons]);
+  }, [currentSubModule, currentVisibleLessons, selectedLesson, selectedQuiz]);
 
   const totalLessons = subModules.reduce((sum, sub) => sum + sub.lessons.length, 0);
 
   if (isPreviewMode) {
     return (
       <div className="space-y-6 animate-fadeIn pb-20">
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-slate-800 p-5 rounded-2xl border-2 border-blue-200 dark:border-blue-800 flex justify-between items-center shadow-sm">
+        <div className="bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-900/20 dark:to-slate-800 p-5 rounded-2xl border-2 border-orange-200 dark:border-orange-800 flex justify-between items-center shadow-sm">
           <div className="flex items-center gap-4">
-            <div className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center text-white">
+            <div className="w-10 h-10 rounded-lg bg-orange-600 flex items-center justify-center text-white">
               <i className="fas fa-eye text-lg"></i>
             </div>
             <div>
-              <p className="font-bold text-slate-900 dark:text-slate-100 text-sm">Xodimlar Ko'rinishi</p>
+              <p className="font-bold text-slate-900 dark:text-slate-100 text-sm">Ko'rib chiqish (Preview)</p>
               <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">Faqat darslar va media kontenti ko'rsatiladi</p>
             </div>
           </div>
@@ -433,20 +583,26 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
 
         <div className="grid lg:grid-cols-[1.7fr,0.9fr] gap-6">
           <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm overflow-hidden">
-            <div className="aspect-video bg-black flex items-center justify-center relative">
-              {currentMedia ? (
-                <PreviewMediaRenderer media={currentMedia} title={selectedLesson?.title ?? 'Media'} />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-slate-400 flex-col gap-3">
-                  <i className="fas fa-photo-film text-4xl"></i>
-                  <span>Media yoki video mavjud emas</span>
+            {selectedQuiz ? (
+              <QuizSolver quiz={selectedQuiz} />
+            ) : (
+              <>
+                <div className="aspect-video bg-black flex items-center justify-center relative">
+                  {currentMedia ? (
+                    renderMedia(currentMedia, selectedLesson?.title ?? 'Media')
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-slate-400 flex-col gap-3">
+                      <i className="fas fa-photo-film text-4xl"></i>
+                      <span>Media yoki video mavjud emas</span>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-            <div className="p-6">
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-3">{selectedLesson?.title || 'Tanlanmagan dars'}</h2>
-              <p className="text-slate-500 dark:text-slate-400 leading-relaxed">{selectedLesson?.description}</p>
-            </div>
+                <div className="p-6">
+                  <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-3">{selectedLesson?.title || 'Tanlanmagan dars'}</h2>
+                  <p className="text-slate-500 dark:text-slate-400 leading-relaxed">{selectedLesson?.description}</p>
+                </div>
+              </>
+            )}
           </div>
 
           <div className="space-y-4">
@@ -460,16 +616,12 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
                     onClick={() => {
                       const nextCollapsed = !collapsed[String(sub.id)];
                       setCollapsed((prev) => ({ ...prev, [sub.id]: nextCollapsed }));
-                      if (!nextCollapsed && visibleLessons.length > 0) {
-                        setSelectedSubModuleId(sub.id);
-                        setSelectedLesson(visibleLessons[0]);
-                      }
                     }}
-                    className="w-full px-5 py-4 text-left flex items-center justify-between gap-4 hover:bg-gradient-to-r hover:from-slate-50 hover:to-slate-100 dark:hover:from-slate-900 dark:hover:to-slate-800 transition-all bg-gradient-to-r from-slate-50 to-blue-50 dark:from-slate-800 dark:to-slate-900 border-b border-slate-100 dark:border-slate-700"
+                    className="w-full px-5 py-4 text-left flex items-center justify-between gap-4 hover:bg-gradient-to-r hover:from-slate-50 hover:to-slate-100 dark:hover:from-slate-900 dark:hover:to-slate-800 transition-all bg-gradient-to-r from-slate-50 to-orange-50 dark:from-slate-800 dark:to-slate-900 border-b border-slate-100 dark:border-slate-700"
                   >
                     <div>
                       <p className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                        <i className="fas fa-layer-group text-blue-600 dark:text-blue-400 text-sm"></i>
+                        <i className="fas fa-layer-group text-orange-600 dark:text-orange-400 text-sm"></i>
                         {sub.name}
                       </p>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -489,15 +641,28 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
                             setSelectedSubModuleId(sub.id);
                             setSelectedLesson(lesson);
                           }}
-                          className={`w-full text-left rounded-xl px-4 py-3 transition-all border-2 flex items-center gap-3 ${selectedLesson?.id === lesson.id ? 'bg-blue-50 dark:bg-slate-950 border-blue-300 dark:border-blue-700' : 'bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'}`}
+                          className={`w-full text-left rounded-xl px-4 py-3 transition-all border-2 flex items-center gap-3 ${selectedLesson?.id === lesson.id ? 'bg-orange-50 dark:bg-slate-950 border-orange-300 dark:border-orange-700' : 'bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'}`}
                         >
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${selectedLesson?.id === lesson.id ? 'bg-blue-600 text-white' : 'bg-blue-100 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'}`}>
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${selectedLesson?.id === lesson.id ? 'bg-orange-600 text-white' : 'bg-orange-100 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400'}`}>
                             <i className="fas fa-book"></i>
                           </div>
                           <span className="text-sm font-semibold text-slate-700 dark:text-slate-300 truncate flex-1">{lesson.title}</span>
                         </button>
-                      )) : (
+                      )) : !sub.quizResponse && (
                         <p className="text-sm text-slate-500 dark:text-slate-400 px-4 py-3">Bu sub-module uchun ko'rish uchun darslar mavjud emas.</p>
+                      )}
+                      {sub.quizResponse && (
+                        <button className="w-full text-left rounded-xl px-4 py-3 transition-all border-2 border-amber-200 dark:border-amber-900/30 flex items-center gap-3 bg-amber-50 dark:bg-amber-900/10 hover:border-amber-300 dark:hover:border-amber-700 mt-2">
+                          <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 bg-amber-100 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400">
+                            <i className="fas fa-tasks"></i>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <span className="text-sm font-semibold text-slate-700 dark:text-slate-300 truncate block">{sub.quizResponse.name}</span>
+                            <span className="text-[10px] uppercase tracking-[0.15em] font-bold text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 rounded inline-block mt-0.5">
+                              {sub.quizResponse.questions?.length || 0} Q
+                            </span>
+                          </div>
+                        </button>
                       )}
                     </div>
                   )}
@@ -511,11 +676,11 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
   }
 
   // Shared input class
-  const inputCls = 'w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-600';
+  const inputCls = 'w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-600';
 
   return (
-    <div className="space-y-6 animate-fadeIn pb-20">
-
+    <>
+      <div className="space-y-6 animate-fadeIn pb-20">
       {/* ─── Header ──────────────────────────────────────────────────────── */}
       <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 flex justify-between items-center">
         <div>
@@ -525,7 +690,7 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => { setIsAddPanelOpen(true); setAddMode('LESSON'); }}
-            className="px-4 py-2 rounded-lg bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 transition-all flex items-center gap-2"
+            className="px-4 py-2 rounded-lg bg-orange-600 text-white font-bold text-sm hover:bg-orange-700 transition-all flex items-center gap-2"
           >
             <i className="fas fa-plus"></i> Yangi kontent
           </button>
@@ -533,551 +698,772 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
             onClick={() => setIsPreviewMode(true)}
             className="px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-sm hover:bg-slate-200 dark:hover:bg-slate-600 transition-all flex items-center gap-2"
           >
-            <i className="fas fa-eye"></i> Xodimlar ko'rinishi
+            <i className="fas fa-eye"></i> Ko'rib chiqish (Preview)
           </button>
         </div>
       </div>
 
-      {/* ─── Add / Edit form ─────────────────────────────────────────────── */}
-      {isAddPanelOpen && (
-        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-blue-100 dark:border-blue-900/50 overflow-hidden animate-slideUp">
-          <div className="bg-blue-600 px-6 py-4 flex justify-between items-center">
-            <h4 className="text-white font-bold flex items-center gap-2">
-              <i className="fas fa-plus-circle"></i>
-              {addMode === 'SUB_MODULE' && (editingLessonId ? 'Sub-modulni tahrirlash' : 'Yangi Sub-module')}
-              {addMode === 'LESSON' && (editingLessonId ? 'Darsni tahrirlash' : 'Yangi dars formasi')}
-              {addMode === 'QUIZ' && 'Yangi Quiz'}
-            </h4>
-            <button onClick={() => { setIsAddPanelOpen(false); setAddMode('LESSON'); resetForm(); }}
-              className="text-white hover:text-slate-200">
-              <i className="fas fa-times"></i>
-            </button>
-          </div>
-
-          <div className="p-6 space-y-6">
-            <div className="flex gap-2">
-              <button
-                onClick={() => setAddMode('SUB_MODULE')}
-                className={`px-3 py-2 rounded-lg text-xs font-semibold ${addMode === 'SUB_MODULE' ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}>
-                Sub-module
-              </button>
-              <button
-                onClick={() => setAddMode('LESSON')}
-                className={`px-3 py-2 rounded-lg text-xs font-semibold ${addMode === 'LESSON' ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}>
-                Dars
-              </button>
-              <button
-                onClick={() => setAddMode('QUIZ')}
-                className={`px-3 py-2 rounded-lg text-xs font-semibold ${addMode === 'QUIZ' ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}>
-                Quiz
+      {/* ─── Add / Edit Modal ─────────────────────────────────────────────── */}
+      {isAddPanelOpen && createPortal(
+        <div onClick={closeTopModal} className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[9999] flex items-center justify-center p-4 sm:p-6">
+          <div onClick={e => e.stopPropagation()} className="bg-white dark:bg-slate-800 w-full max-w-3xl rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-700 flex flex-col max-h-[85vh] m-auto">
+            <div className="bg-slate-50 dark:bg-slate-900/50 px-6 py-4 flex justify-between items-center border-b border-slate-200 dark:border-slate-700 shrink-0">
+              <h4 className="text-slate-800 dark:text-slate-200 font-bold flex items-center gap-2">
+                {addMode === 'SUB_MODULE' && (
+                  <><i className="fas fa-layer-group text-orange-500"></i> {editingLessonId ? 'Sub-modulni tahrirlash' : 'Yangi Sub-module'}</>
+                )}
+                {addMode === 'LESSON' && (
+                  <><i className="fas fa-book text-orange-500"></i> {editingLessonId ? 'Darsni tahrirlash' : 'Yangi dars formasi'}</>
+                )}
+                {addMode === 'QUIZ' && (
+                  <><i className="fas fa-tasks text-orange-500"></i> Yangi Quiz</>
+                )}
+              </h4>
+              <button onClick={() => { setIsAddPanelOpen(false); setAddMode('LESSON'); resetForm(); }}
+                className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-500 hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors flex items-center justify-center">
+                <i className="fas fa-times"></i>
               </button>
             </div>
 
-            {addMode === 'SUB_MODULE' && (
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Sub-module nomi *</label>
-                  <input
-                    type="text" value={newSubModuleName}
-                    onChange={e => setNewSubModuleName(e.target.value)}
-                    className={inputCls}
-                    placeholder="Sub-module nomini kiriting"
-                  />
-                </div>
-                <div className="flex justify-end gap-2">
-                  <button onClick={() => { setIsAddPanelOpen(false); resetForm(); }}
-                    className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold">Bekor qilish</button>
-                  <button onClick={handleAddSubModule}
-                    className="px-4 py-2 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700">
-                    {editingLessonId ? "O'zgarishlarni saqlash" : 'Saqlash'}
+            <div className="p-6 overflow-y-auto custom-scrollbar space-y-6 flex-1">
+              {!editingLessonId && (
+                <div className="flex gap-2 mb-6">
+                  <button
+                    onClick={() => setAddMode('SUB_MODULE')}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${addMode === 'SUB_MODULE' ? 'bg-orange-600 text-white shadow-md shadow-orange-500/20' : 'bg-slate-100 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>
+                    <i className="fas fa-layer-group mr-1.5"></i> Sub-module
+                  </button>
+                  <button
+                    onClick={() => setAddMode('LESSON')}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${addMode === 'LESSON' ? 'bg-orange-600 text-white shadow-md shadow-orange-500/20' : 'bg-slate-100 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>
+                    <i className="fas fa-book mr-1.5"></i> Dars
+                  </button>
+                  <button
+                    onClick={() => setAddMode('QUIZ')}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${addMode === 'QUIZ' ? 'bg-orange-600 text-white shadow-md shadow-orange-500/20' : 'bg-slate-100 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>
+                    <i className="fas fa-tasks mr-1.5"></i> Quiz
                   </button>
                 </div>
-              </div>
-            )}
-
-            {addMode === 'QUIZ' && (
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Quiz nomi *</label>
-                  <input type="text" className={inputCls} placeholder="Quiz sarlavhasi" value={quizTitle} onChange={e => setQuizTitle(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Quiz tavsifi</label>
-                  <textarea className={inputCls} value={quizDescription} onChange={e => setQuizDescription(e.target.value)} rows={3} placeholder="Quiz tavsifi" />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Sub-module tanlang</label>
-                  <select value={lessonSubModuleId ?? ''} onChange={e => setLessonSubModuleId(e.target.value)} className={inputCls}>
-                    <option value="">Sub-module tanlang</option>
-                    {module.subModules?.map(sm => (<option key={String(sm.id)} value={sm.id}>{sm.name}</option>))}
-                  </select>
-                </div>
-                <div className="border p-4 rounded-xl space-y-3 bg-slate-50 dark:bg-slate-900">
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Savol matni</label>
-                    <input className={inputCls} value={quizCurrentQuestion.text} onChange={e => setQuizCurrentQuestion(prev => ({ ...prev, text: e.target.value }))} placeholder="Savol..." />
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {(quizCurrentQuestion.options || []).map((opt, idx) => (
-                      <input key={idx} className={inputCls} value={opt} onChange={e => {
-                        const next = [...(quizCurrentQuestion.options || [])]; next[idx] = e.target.value;
-                        setQuizCurrentQuestion(prev => ({ ...prev, options: next }));
-                      }} placeholder={`Variant ${idx + 1}`} />
-                    ))}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-slate-500">To'g'ri javob:</span>
-                    <select className={inputCls} value={quizCurrentQuestion.correctAnswer} onChange={e => setQuizCurrentQuestion(prev => ({ ...prev, correctAnswer: Number(e.target.value) }))}>
-                      {(quizCurrentQuestion.options || []).map((_, idx) => (<option key={idx} value={idx}>Variant {String.fromCharCode(65 + idx)}</option>))}
-                    </select>
-                    <button onClick={handleAddQuizQuestion} className="px-3 py-2 bg-blue-600 text-white rounded-xl text-xs">Savol qo'shish</button>
-                  </div>
-                </div>
-                {quizQuestions.length > 0 && (
-                  <div className="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
-                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Qo'shilgan savollar ({quizQuestions.length})</p>
-                    <ul className="text-xs list-decimal ml-4 mt-2 space-y-1">
-                      {quizQuestions.map((q, i) => <li key={i}>{q.text}</li>)}
-                    </ul>
-                  </div>
-                )}
-                <div className="flex justify-end gap-2 pb-2">
-                  <button onClick={() => { setIsAddPanelOpen(false); resetForm(); }} className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold">Bekor qilish</button>
-                  <button onClick={handleAddQuiz} className="px-4 py-2 rounded-xl bg-green-600 text-white font-bold">Quizni saqlash</button>
-                </div>
-              </div>
-            )}
-
-            {addMode === 'LESSON' && (
-              <>
-
-            {/* Title & Description & SubModule Selector */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Dars sarlavhasi *</label>
-                <input
-                  type="text" className={inputCls}
-                  placeholder="Masalan: Tizim loglari bilan ishlash"
-                  value={newLesson.title}
-                  onChange={e => setNewLesson({ ...newLesson, title: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Qisqacha tavsif</label>
-                <input
-                  type="text" className={inputCls}
-                  placeholder="Dars haqida qisqacha..."
-                  value={newLesson.description}
-                  onChange={e => setNewLesson({ ...newLesson, description: e.target.value })}
-                />
-              </div>
-            </div>
-
-            {/* SubModule Selector */}
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Sub-module tanlang *</label>
-              <select 
-                value={lessonSubModuleId ?? ''} 
-                onChange={e => setLessonSubModuleId(e.target.value ? parseInt(e.target.value) : null)}
-                className={inputCls}
-              >
-                <option value="">-- Sub-module tanlang --</option>
-                {module.subModules?.map(sm => (
-                  <option key={String(sm.id)} value={sm.id}>{sm.name}</option>
-                ))}
-              </select>
-              {!lessonSubModuleId && !editingLessonId && (
-                <p className="text-xs text-red-500 font-semibold">Sub-modulni tanlash shart!</p>
               )}
-            </div>
 
-            {/* ─── MEDIA SECTION ─────────────────────────────────────────── */}
-            <div className="border border-slate-100 dark:border-slate-700 rounded-2xl overflow-hidden">
-              <div className="bg-slate-50 dark:bg-slate-900/50 px-5 py-3 border-b border-slate-100 dark:border-slate-700">
-                <h5 className="font-bold text-slate-700 dark:text-slate-300 text-sm flex items-center gap-2">
-                  <i className="fas fa-photo-film text-blue-600"></i>
-                  Media fayllar
-                  <span className="ml-1 text-xs font-normal text-slate-400">(bir nechta qo'shish mumkin)</span>
-                </h5>
-              </div>
-
-              <div className="p-5 space-y-5">
-
-                {/* ── Existing media (edit mode only) ────────────────────── */}
-                {editingLessonId && (
+              {addMode === 'SUB_MODULE' && (
+                <div className="space-y-4">
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-2">
-                      <i className="fas fa-database text-slate-400"></i>
-                      Serverda saqlangan media
-                      <span className="font-normal text-slate-400">({existingMedia.length} ta)</span>
-                    </label>
-
-                    {existingMedia.length === 0 ? (
-                      <p className="text-xs text-slate-400 italic py-2 text-center">
-                        Bu darsda hali media fayl yo'q
-                      </p>
-                    ) : (
-                      <div className="space-y-2">
-                        {existingMedia.map((media, idx) => (
-                          <div
-                            key={media.id}
-                            className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700"
-                          >
-                            <span className="text-slate-400 text-xs font-bold w-5 text-center">{idx + 1}</span>
-                            <i className={`fas ${mediaTypeIcon(media.type)} text-lg w-5 text-center`}></i>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs text-slate-500 dark:text-slate-400 truncate font-mono">
-                                {media.url.length > 60 ? '...' + media.url.slice(-60) : media.url}
-                              </p>
-                              <p className="text-[10px] text-slate-400 mt-0.5">{media.type}</p>
-                            </div>
-
-                            {/* Preview thumbnail for images */}
-                            {media.type === 'IMAGE' && (
-                              <img
-                                src={media.url}
-                                alt="preview"
-                                className="w-10 h-10 rounded-lg object-cover border border-slate-200 dark:border-slate-600 shrink-0"
-                                onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                              />
-                            )}
-
-                            <button
-                              onClick={() => handleDeleteExistingMedia(media.id)}
-                              disabled={deletingMediaId === media.id}
-                              className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all disabled:opacity-50"
-                              title="O'chirish"
-                            >
-                              {deletingMediaId === media.id
-                                ? <i className="fas fa-spinner fa-spin text-sm"></i>
-                                : <i className="fas fa-trash-can text-sm"></i>
-                              }
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    <div className="border-t border-slate-100 dark:border-slate-700 pt-4">
-                      <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-3">
-                        Yangi media qo'shish
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* File upload */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">
-                    Fayl yuklash (video, rasm)
-                  </label>
-                  <label
-                    htmlFor="media-upload"
-                    className="flex items-center justify-center gap-3 w-full px-4 py-4 bg-slate-50 dark:bg-slate-900/40 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/10 hover:border-blue-300 dark:hover:border-blue-700 transition-all text-slate-500 dark:text-slate-400 text-sm"
-                  >
-                    <i className="fas fa-cloud-upload-alt text-xl text-blue-400"></i>
-                    <span>Fayllarni tanlash yoki shu yerga tashlang</span>
-                  </label>
-                  <input
-                    id="media-upload" type="file" className="hidden"
-                    accept="video/*,image/*" multiple onChange={handleFileSelect}
-                  />
-                </div>
-
-                {/* External URL */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">
-                    Tashqi havola (YouTube, boshqa)
-                  </label>
-                  <div className="flex gap-2">
-                    <select
-                      value={externalType}
-                      onChange={e => setExternalType(e.target.value as 'VIDEO' | 'IMAGE' | 'OTHER')}
-                      className="px-3 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-900 dark:text-slate-100"
-                    >
-                      <option value="VIDEO">🎬 Video</option>
-                      <option value="IMAGE">🖼️ Rasm</option>
-                      <option value="OTHER">📄 Boshqa</option>
-                    </select>
+                    <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Sub-module nomi *</label>
                     <input
-                      type="text" className={`flex-1 ${inputCls}`}
-                      placeholder="https://www.youtube.com/embed/..."
-                      value={externalUrl}
-                      onChange={e => setExternalUrl(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && handleAddExternal()}
+                      type="text" value={newSubModuleName}
+                      onChange={e => setNewSubModuleName(e.target.value)}
+                      className={inputCls}
+                      placeholder="Sub-module nomini kiriting"
                     />
-                    <button
-                      onClick={handleAddExternal}
-                      disabled={!externalUrl.trim()}
-                      className="px-4 py-2.5 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 disabled:opacity-40 transition-all"
-                    >
-                      <i className="fas fa-plus"></i>
+                  </div>
+                  <div className="flex justify-end gap-2 pt-4">
+                    <button onClick={() => { setIsAddPanelOpen(false); resetForm(); }}
+                      className="px-6 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold transition-colors hover:bg-slate-200 dark:hover:bg-slate-600">Bekor qilish</button>
+                    <button onClick={handleAddSubModule}
+                      className="px-6 py-2.5 rounded-xl bg-orange-600 text-white font-bold hover:bg-orange-700 transition-colors shadow-md shadow-orange-500/20">
+                      {editingLessonId ? "O'zgarishlarni saqlash" : 'Saqlash'}
                     </button>
                   </div>
                 </div>
+              )}
 
-                {/* Newly added media (not yet uploaded) */}
-                {mediaItems.length > 0 && (
-                  <div className="space-y-2 pt-1">
-                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">
-                      Yangi qo'shilgan ({mediaItems.length} ta) — hali yuklanmagan
-                    </p>
-                    {mediaItems.map((item, idx) => (
-                      <div
-                        key={item.id}
-                        className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/10 rounded-xl border border-blue-100 dark:border-blue-900/30"
-                      >
-                        <span className="text-slate-400 text-xs font-bold w-5 text-center">{idx + 1}</span>
-                        {item.kind === 'internal' ? (
-                          <>
-                            <i className={`fas ${fileIcon(item.file)} text-lg w-5 text-center`}></i>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-slate-700 dark:text-slate-300 truncate">{item.file.name}</p>
-                              <p className="text-[10px] text-slate-400">
-                                {(item.file.size / (1024 * 1024)).toFixed(1)} MB · Lokal fayl
-                              </p>
-                            </div>
-                            <span className="text-[10px] bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full font-bold shrink-0">
-                              UPLOAD
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            <i className={`fas ${mediaTypeIcon(item.type)} text-lg w-5 text-center`}></i>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-slate-700 dark:text-slate-300 truncate">{item.url}</p>
-                              <p className="text-[10px] text-slate-400">Tashqi havola · {item.type}</p>
-                            </div>
-                            <span className="text-[10px] bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-2 py-0.5 rounded-full font-bold shrink-0">
-                              {item.type}
-                            </span>
-                          </>
-                        )}
-                        <button
-                          onClick={() => handleRemoveMedia(item.id)}
-                          className="text-slate-300 hover:text-red-500 transition-colors ml-1 shrink-0"
-                          title="Ro'yxatdan olib tashlash"
-                        >
-                          <i className="fas fa-times-circle text-lg"></i>
-                        </button>
-                      </div>
-                    ))}
+              {addMode === 'QUIZ' && (
+                <div className="space-y-5">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Quiz nomi *</label>
+                    <input type="text" className={inputCls} placeholder="Quiz sarlavhasi" value={quizTitle} onChange={e => setQuizTitle(e.target.value)} />
                   </div>
-                )}
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Quiz tavsifi</label>
+                    <textarea className={inputCls} value={quizDescription} onChange={e => setQuizDescription(e.target.value)} rows={3} placeholder="Quiz tavsifi" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Sub-module tanlang</label>
+                    <select value={lessonSubModuleId ?? ''} onChange={e => setLessonSubModuleId(e.target.value)} className={inputCls}>
+                      <option value="">Sub-module tanlang</option>
+                      {module.subModules?.map(sm => (<option key={String(sm.id)} value={sm.id}>{sm.name}</option>))}
+                    </select>
+                  </div>
+                  <div className="border border-slate-200 dark:border-slate-700 p-5 rounded-2xl space-y-4 bg-slate-50/50 dark:bg-slate-800/50">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Savol matni</label>
+                      <input className={inputCls} value={quizCurrentQuestion.text} onChange={e => setQuizCurrentQuestion(prev => ({ ...prev, text: e.target.value }))} placeholder="Savol matnini kiriting..." />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {(quizCurrentQuestion.options || []).map((opt, idx) => (
+                        <input key={idx} className={inputCls} value={opt} onChange={e => {
+                          const next = [...(quizCurrentQuestion.options || [])]; next[idx] = e.target.value;
+                          setQuizCurrentQuestion(prev => ({ ...prev, options: next }));
+                        }} placeholder={`Variant ${String.fromCharCode(65 + idx)}`} />
+                      ))}
+                    </div>
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2">
+                      <div className="flex items-center gap-3 w-full sm:w-auto">
+                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">To'g'ri javob:</span>
+                        <select className={`${inputCls} !w-auto !py-2`} value={quizCurrentQuestion.correctAnswer} onChange={e => setQuizCurrentQuestion(prev => ({ ...prev, correctAnswer: Number(e.target.value) }))}>
+                          {(quizCurrentQuestion.options || []).map((_, idx) => (<option key={idx} value={idx}>Variant {String.fromCharCode(65 + idx)}</option>))}
+                        </select>
+                      </div>
+                      <button onClick={handleAddQuizQuestion} className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-sm font-bold shadow-md shadow-orange-500/20 transition-colors w-full sm:w-auto flex items-center justify-center gap-2">
+                        <i className="fas fa-plus"></i> Savol qo'shish
+                      </button>
+                    </div>
+                  </div>
+                  {quizQuestions.length > 0 && (
+                    <div className="bg-slate-50 dark:bg-slate-800/80 p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
+                      <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">Qo'shilgan savollar ({quizQuestions.length})</p>
+                      <ul className="text-sm list-decimal ml-5 space-y-2 text-slate-700 dark:text-slate-300">
+                        {quizQuestions.map((q, i) => <li key={i}>{q.text}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  <div className="flex justify-end gap-2 pt-4">
+                    <button onClick={() => { setIsAddPanelOpen(false); resetForm(); }} className="px-6 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold transition-colors hover:bg-slate-200 dark:hover:bg-slate-600">Bekor qilish</button>
+                    <button onClick={handleAddQuiz} className="px-6 py-2.5 rounded-xl bg-green-600 hover:bg-green-700 text-white font-bold transition-colors shadow-md shadow-green-500/20 flex items-center gap-2">
+                      <i className="fas fa-save"></i> Quizni saqlash
+                    </button>
+                  </div>
+                </div>
+              )}
 
-                {mediaItems.length === 0 && !editingLessonId && (
-                  <p className="text-xs text-slate-400 italic text-center py-2">
-                    Hali media qo'shilmagan
-                  </p>
-                )}
-              </div>
-            </div>
+              {addMode === 'LESSON' && (
+                <div className="space-y-6">
+                  {/* Tabs Header */}
+                  <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 pb-1">
+                    <button
+                      onClick={() => setLessonTab('BASIC')}
+                      className={`px-4 py-2 text-sm font-bold border-b-2 transition-colors ${
+                        lessonTab === 'BASIC'
+                          ? 'border-orange-500 text-orange-600 dark:text-orange-400'
+                          : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      <i className="fas fa-info-circle mr-2"></i> Asosiy Ma'lumotlar
+                    </button>
+                    <button
+                      onClick={() => setLessonTab('MEDIA')}
+                      disabled={!editingLessonId}
+                      className={`px-4 py-2 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${
+                        lessonTab === 'MEDIA'
+                          ? 'border-orange-500 text-orange-600 dark:text-orange-400'
+                          : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                      } ${!editingLessonId ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      title={!editingLessonId ? "Media yuklash uchun avval darsni saqlang" : ""}
+                    >
+                      <i className="fas fa-photo-film"></i> Media Fayllar
+                      {!editingLessonId && <i className="fas fa-lock text-xs ml-1"></i>}
+                    </button>
+                  </div>
 
-            {/* Save button */}
-            <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-700">
-              <button
-                onClick={handleAddLesson}
-                disabled={isUploading}
-                className={`px-8 py-3 bg-blue-600 text-white rounded-xl font-bold transition-all flex items-center gap-2 ${
-                  isUploading ? 'opacity-70 cursor-not-allowed' : 'hover:bg-blue-700'
-                }`}
-              >
-                {isUploading
-                  ? <><i className="fas fa-spinner fa-spin"></i> Saqlanmoqda...</>
-                  : <><i className="fas fa-save"></i> {editingLessonId ? "O'zgarishlarni saqlash" : 'Darsni saqlash'}</>
-                }
-              </button>
+                  {/* Tab Content: BASIC INFO */}
+                  {lessonTab === 'BASIC' && (
+                    <div className="space-y-6 animate-fadeIn">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Dars sarlavhasi *</label>
+                          <input
+                            type="text" className={inputCls}
+                            placeholder="Masalan: Tizim loglari bilan ishlash"
+                            value={newLesson.title}
+                            onChange={e => setNewLesson({ ...newLesson, title: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Sub-module tanlang *</label>
+                          <select 
+                            value={lessonSubModuleId ?? ''} 
+                            onChange={e => setLessonSubModuleId(e.target.value ? parseInt(e.target.value) : null)}
+                            className={inputCls}
+                          >
+                            <option value="">-- Sub-module tanlang --</option>
+                            {module.subModules?.map(sm => (
+                              <option key={String(sm.id)} value={sm.id}>{sm.name}</option>
+                            ))}
+                          </select>
+                          {!lessonSubModuleId && !editingLessonId && (
+                            <p className="text-xs text-red-500 font-medium">Sub-modulni tanlash shart!</p>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Qisqacha tavsif</label>
+                        <textarea
+                          className={inputCls}
+                          rows={3}
+                          placeholder="Dars haqida qisqacha ma'lumot..."
+                          value={newLesson.description}
+                          onChange={e => setNewLesson({ ...newLesson, description: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tab Content: MEDIA */}
+                  {lessonTab === 'MEDIA' && editingLessonId && (
+                    <div className="animate-fadeIn space-y-6">
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-2">
+                        {/* Left Column: Actions (Upload & Link) */}
+                        <div className="space-y-6">
+                          {/* File upload Container */}
+                          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-5 shadow-sm space-y-4">
+                            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-2">
+                              <i className="fas fa-cloud-upload-alt text-orange-500"></i> Fayl yuklash (Video, Rasm)
+                            </label>
+                            <label
+                              htmlFor="media-upload"
+                              className="flex flex-col items-center justify-center gap-3 w-full p-8 bg-slate-50 dark:bg-slate-900/40 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl cursor-pointer hover:bg-orange-50 dark:hover:bg-orange-900/20 hover:border-orange-400 dark:hover:border-orange-600 transition-all text-slate-500 dark:text-slate-400 group relative overflow-hidden"
+                            >
+                              <div className="absolute inset-0 bg-gradient-to-br from-orange-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                              <div className="w-14 h-14 bg-white dark:bg-slate-800 text-orange-500 rounded-full flex items-center justify-center group-hover:scale-110 group-hover:bg-orange-500 group-hover:text-white transition-all shadow-sm border border-slate-100 dark:border-slate-700 z-10">
+                                <i className="fas fa-plus text-xl"></i>
+                              </div>
+                              <div className="text-center z-10">
+                                <span className="font-bold text-slate-700 dark:text-slate-200 block text-sm mb-1">Kompyuterdan tanlash</span>
+                                <span className="text-xs text-slate-400">Yoki faylni shu yerga tashlang</span>
+                              </div>
+                            </label>
+                            <input
+                              id="media-upload" type="file" className="hidden"
+                              accept="video/*,image/*" multiple onChange={handleFileSelect}
+                            />
+                            {/* Uploading State inside container */}
+                            {isUploadingMedia && (
+                              <div className="flex items-center justify-center p-3 bg-orange-50 dark:bg-orange-900/20 rounded-xl text-orange-600 dark:text-orange-400 gap-3 border border-orange-100 dark:border-orange-800 mt-3">
+                                <i className="fas fa-circle-notch fa-spin text-lg"></i>
+                                <span className="font-bold text-xs">Media yuklanmoqda...</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* External URL Container */}
+                          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-5 shadow-sm space-y-4">
+                            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-2">
+                              <i className="fas fa-link text-blue-500"></i> Tashqi havola (YouTube)
+                            </label>
+                            <div className="flex flex-col gap-3">
+                              <div className="flex gap-2">
+                                <select
+                                  value={externalType}
+                                  onChange={e => setExternalType(e.target.value as 'VIDEO' | 'IMAGE' | 'OTHER')}
+                                  className="w-[110px] px-3 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-orange-500/20 text-slate-700 dark:text-slate-300 font-medium"
+                                >
+                                  <option value="VIDEO">🎬 Video</option>
+                                  <option value="IMAGE">🖼️ Rasm</option>
+                                  <option value="OTHER">📄 Boshq</option>
+                                </select>
+                                <input
+                                  type="text" className={`flex-1 ${inputCls}`}
+                                  placeholder="https://youtube.com/..."
+                                  value={externalUrl}
+                                  onChange={e => setExternalUrl(e.target.value)}
+                                  onKeyDown={e => e.key === 'Enter' && handleAddExternal()}
+                                />
+                              </div>
+                              <button
+                                onClick={handleAddExternal}
+                                disabled={!externalUrl.trim()}
+                                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl font-bold text-sm disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+                              >
+                                Havolani ulash <i className="fas fa-arrow-right text-xs"></i>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Right Column: Saved Media */}
+                        <div className="bg-slate-50 dark:bg-slate-900/30 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col h-[400px]">
+                          <div className="p-4 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-t-2xl flex items-center justify-between">
+                            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-2">
+                              <i className="fas fa-database text-slate-400"></i>
+                              Saqlangan Media
+                            </label>
+                            <span className="bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 text-xs font-bold px-2.5 py-0.5 rounded-full">
+                              {existingMedia.length}
+                            </span>
+                          </div>
+
+                          <div className="flex-1 overflow-y-auto p-4">
+                            {existingMedia.length === 0 ? (
+                              <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-3">
+                                <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                                  <i className="fas fa-folder-open text-2xl text-slate-300 dark:text-slate-600"></i>
+                                </div>
+                                <span className="text-sm font-medium">Hali hech qanday media yo'q</span>
+                              </div>
+                            ) : (
+                              <div className="space-y-3">
+                                {existingMedia.map((media, idx) => (
+                                  <div
+                                    key={media.id}
+                                    className="flex items-center gap-3 p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm group hover:border-slate-300 dark:hover:border-slate-600 transition-colors"
+                                  >
+                                    <div className="w-8 h-8 rounded-lg bg-slate-50 dark:bg-slate-900 flex items-center justify-center shrink-0">
+                                      <i className={`fas ${mediaTypeIcon(media.type)} text-slate-400`}></i>
+                                    </div>
+                                    
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-[13px] text-slate-700 dark:text-slate-300 font-medium truncate" title={media.url}>
+                                        {media.url.split('/').pop() || media.url}
+                                      </p>
+                                      <p className="text-[10px] font-bold text-slate-400 uppercase mt-0.5 flex items-center gap-1">
+                                        {media.type}
+                                      </p>
+                                    </div>
+
+                                    {/* Preview thumbnail for images */}
+                                    {media.type === 'IMAGE' && (
+                                      <img
+                                        src={media.url}
+                                        alt="preview"
+                                        className="w-8 h-8 rounded border border-slate-200 dark:border-slate-600 object-cover shrink-0"
+                                        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                      />
+                                    )}
+
+                                    <button
+                                      onClick={() => handleDeleteExistingMedia(media.id)}
+                                      disabled={deletingMediaId === media.id}
+                                      className="w-8 h-8 rounded flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors shrink-0"
+                                      title="O'chirish"
+                                    >
+                                      {deletingMediaId === media.id
+                                        ? <i className="fas fa-spinner fa-spin text-sm"></i>
+                                        : <i className="fas fa-trash-alt text-sm"></i>
+                                      }
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Save button - ONLY FOR BASIC INFO */}
+                  <div className="flex justify-end gap-3 pt-6 border-t border-slate-200 dark:border-slate-700">
+                    <button onClick={() => { setIsAddPanelOpen(false); resetForm(); }}
+                      className="px-6 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold transition-colors hover:bg-slate-200 dark:hover:bg-slate-600">Yopish</button>
+                    {lessonTab === 'BASIC' && (
+                      <button
+                        onClick={handleAddLesson}
+                        disabled={isUploading}
+                        className={`px-8 py-2.5 bg-orange-600 text-white rounded-xl font-bold transition-all flex items-center gap-2 shadow-md shadow-orange-500/20 ${
+                          isUploading ? 'opacity-70 cursor-not-allowed' : 'hover:bg-orange-700'
+                        }`}
+                      >
+                        {isUploading
+                          ? <><i className="fas fa-spinner fa-spin"></i> Saqlanmoqda...</>
+                          : <><i className="fas fa-save"></i> {editingLessonId ? "O'zgarishlarni saqlash" : "Darsni yaratish va Media qo'shish"}</>
+                        }
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
-          </>
-        )}
-      </div>
-    </div>
-  )}
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* ─── Sub-modules and Lessons List ────────────────────────────────── */}
       <div className="space-y-4">
         <h4 className="font-bold text-slate-900 dark:text-slate-100 px-1">Sub-modullar va Darslar</h4>
         {subModules.length > 0 ? (
-          <div className="space-y-3">
-            {subModules.map((subModule) => (
-              <div key={String(subModule.id)} className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
-                {/* Sub-module header */}
-                <div className="bg-gradient-to-r from-slate-50 to-blue-50 dark:from-slate-850 dark:to-slate-900 px-4 py-3 flex items-center justify-between border-b border-slate-200 dark:border-slate-700">
-                  <div className="flex-1">
-                    <h5 className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                      <i className="fas fa-layer-group text-blue-600 dark:text-blue-400 text-sm"></i>
-                      {subModule.name}
-                    </h5>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      <i className="fas fa-book text-sm mr-1"></i>
-                      {subModule.lessons.length} ta dars
-                      {subModule.quizResponse && (
-                        <span className="ml-2">
-                          <i className="fas fa-tasks text-sm mr-1 text-amber-600 dark:text-amber-400"></i>
-                          1 ta test
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                  <div className="flex gap-2 shrink-0">
-                    <button
-                      onClick={() => handleEditSubModule(subModule)}
-                      className="w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all text-sm"
-                      title="Tahrirlash"
-                    >
-                      <i className="fas fa-edit"></i>
-                    </button>
-                    <button
-                      onClick={() => handleDeleteSubModule(subModule.id)}
-                      className="w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all text-sm"
-                      title="O'chirish"
-                    >
-                      <i className="fas fa-trash"></i>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Sub-module lessons and quiz */}
-                {subModule.lessons.length > 0 || subModule.quizResponse ? (
-                  <div className="divide-y divide-slate-100 dark:divide-slate-700">
-                    {/* Lessons */}
-                    {subModule.lessons.length > 0 && (
-                      <>
-                        {subModule.lessons.map((lesson, idx) => (
-                          <div key={lesson.id} className="px-4 py-3 flex items-center gap-3 hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-all group">
-                            <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/20 rounded-lg flex items-center justify-center text-xs font-bold text-blue-600 dark:text-blue-400 group-hover:bg-blue-200 dark:group-hover:bg-blue-900/40 transition-all shrink-0">
-                              <i className="fas fa-book text-xs"></i>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-slate-700 dark:text-slate-300 truncate">{lesson.title}</p>
-                              <p className="text-xs text-slate-400 mt-0.5">
-                                {lesson.media?.length || 0} ta media
-                              </p>
-                            </div>
-                            <div className="flex gap-1.5 shrink-0">
-                              <button
-                                onClick={() => handleEditLesson(lesson)}
-                                className="w-7 h-7 rounded-lg border border-slate-100 dark:border-slate-700 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all text-xs"
-                                title="Tahrirlash"
-                              >
-                                <i className="fas fa-edit"></i>
-                              </button>
-                              <button
-                                onClick={() => handleDeleteLesson(lesson.id)}
-                                className="w-7 h-7 rounded-lg border border-slate-100 dark:border-slate-700 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all text-xs"
-                                title="O'chirish"
-                              >
-                                <i className="fas fa-trash"></i>
-                              </button>
+          <div className="overflow-x-auto bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700">
+            <table className="w-full text-left border-collapse min-w-[600px]">
+              <thead>
+                <tr className="bg-slate-50/50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-10 text-center">#</th>
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Sub-module nomi</th>
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Darslar / Testlar</th>
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Amallar</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                {subModules.map((subModule, index) => {
+                  const isCollapsed = collapsed[String(subModule.id)];
+                  return (
+                    <React.Fragment key={String(subModule.id)}>
+                      {/* Sub-module Row */}
+                      <tr 
+                        className={`group hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer ${!isCollapsed ? 'bg-orange-50/30 dark:bg-orange-900/10' : ''}`}
+                        onClick={() => setCollapsed((prev) => ({ ...prev, [subModule.id]: !isCollapsed }))}
+                      >
+                        <td className="px-6 py-4">
+                          <div className="w-8 h-8 rounded-xl bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 flex items-center justify-center text-sm font-bold mx-auto shadow-sm">
+                            {index + 1}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <i className={`fas ${isCollapsed ? 'fa-chevron-right' : 'fa-chevron-down'} text-slate-400 w-4 text-center transition-transform text-xs`}></i>
+                            <div className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                              <i className="fas fa-layer-group text-orange-500 text-sm"></i>
+                              {subModule.name}
                             </div>
                           </div>
-                        ))}
-                      </>
-                    )}
-
-                    {/* Quiz */}
-                    {subModule.quizResponse && (
-                      <div className="px-4 py-3 flex items-center gap-3 hover:bg-amber-50 dark:hover:bg-amber-900/10 transition-all group">
-                        <div className="w-8 h-8 bg-amber-100 dark:bg-amber-900/20 rounded-lg flex items-center justify-center text-xs font-bold text-amber-600 dark:text-amber-400 group-hover:bg-amber-200 dark:group-hover:bg-amber-900/40 transition-all shrink-0">
-                          <i className="fas fa-tasks text-xs"></i>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-slate-700 dark:text-slate-300 truncate flex items-center gap-2">
-                            {subModule.quizResponse.name}
-                            <span className="text-[10px] uppercase tracking-[0.15em] font-bold text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 rounded">
-                              {subModule.quizResponse.questions?.length || 0} Q
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs font-semibold px-2.5 py-1 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg flex items-center gap-1.5 border border-slate-200 dark:border-slate-600 shadow-sm">
+                              <i className="fas fa-book text-slate-400"></i> {subModule.lessons.length} ta dars
                             </span>
-                          </p>
-                          <p className="text-xs text-slate-400 mt-0.5">
-                            Test
-                          </p>
-                        </div>
-                        <div className="flex gap-1.5 shrink-0">
-                          <button
-                            onClick={() => {
-                              setQuizTitle(subModule.quizResponse.name);
-                              setQuizQuestions(subModule.quizResponse.questions || []);
-                              setAddMode('QUIZ');
-                              setLessonSubModuleId(subModule.id);
-                              setIsAddPanelOpen(true);
-                            }}
-                            className="w-7 h-7 rounded-lg border border-slate-100 dark:border-slate-700 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all text-xs"
-                            title="Tahrirlash"
-                          >
-                            <i className="fas fa-edit"></i>
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (confirm(`"${subModule.quizResponse.name}" testni o'chirmoqchimisiz?`)) {
-                                console.log('Delete quiz:', subModule.quizResponse.id);
-                              }
-                            }}
-                            className="w-7 h-7 rounded-lg border border-slate-100 dark:border-slate-700 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all text-xs"
-                            title="O'chirish"
-                          >
-                            <i className="fas fa-trash"></i>
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="px-4 py-3 text-center text-xs text-slate-400 italic">
-                    Bu sub-modulda darslar yoki testlar mavjud emas
-                  </div>
-                )}
-              </div>
-            ))}
+                            {subModule.quizResponse && (
+                              <span className="text-xs font-semibold px-2.5 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-lg flex items-center gap-1.5 border border-amber-200 dark:border-amber-800 shadow-sm">
+                                <i className="fas fa-tasks text-amber-500"></i> 1 ta test
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex justify-end gap-2" onClick={e => e.stopPropagation()}>
+                            <button
+                              onClick={() => handleEditSubModule(subModule)}
+                              className="w-8 h-8 rounded-full bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-900/40 transition-colors inline-flex items-center justify-center opacity-0 group-hover:opacity-100 shadow-sm border border-orange-200 dark:border-orange-800/50"
+                              title="Tahrirlash"
+                            >
+                              <i className="fas fa-pen text-xs"></i>
+                            </button>
+                            <button
+                              onClick={() => handleDeleteSubModule(subModule)}
+                              className="w-8 h-8 rounded-full bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors inline-flex items-center justify-center opacity-0 group-hover:opacity-100 shadow-sm border border-red-200 dark:border-red-800/50"
+                              title="O'chirish"
+                            >
+                              <i className="fas fa-trash text-xs"></i>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {/* Nested Lessons / Quiz */}
+                      {!isCollapsed && (
+                        <tr>
+                          <td colSpan={4} className="p-0 border-b-2 border-orange-100 dark:border-orange-900/30 bg-slate-50/50 dark:bg-slate-900/20">
+                            <div className="pl-6 sm:pl-20 pr-6 py-4 animate-in slide-in-from-top-2 duration-200">
+                              {subModule.lessons.length > 0 || subModule.quizResponse ? (
+                                <div className="space-y-2">
+                                  {/* Lessons */}
+                                  {subModule.lessons.map((lesson, idx) => (
+                                    <div key={lesson.id} className="flex items-center gap-4 p-3 bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm hover:border-orange-200 dark:hover:border-orange-800 transition-colors group">
+                                      <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 flex items-center justify-center text-xs font-bold">
+                                        {idx + 1}
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate flex items-center gap-2">
+                                          <i className="fas fa-play-circle text-orange-500"></i> {lesson.title}
+                                        </p>
+                                        <p className="text-xs text-slate-500 mt-0.5">
+                                          {lesson.media?.length || 0} ta media fayl
+                                        </p>
+                                      </div>
+                                      <div className="flex gap-2 shrink-0">
+                                        <button
+                                          onClick={() => handleEditLesson(lesson)}
+                                          className="w-8 h-8 rounded-full bg-slate-50 dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 hover:text-orange-600 dark:hover:text-orange-400 transition-colors inline-flex items-center justify-center opacity-0 group-hover:opacity-100 border border-slate-200 dark:border-slate-700"
+                                          title="Darsni tahrirlash"
+                                        >
+                                          <i className="fas fa-pen text-xs"></i>
+                                        </button>
+                                        <button
+                                          onClick={() => handleDeleteLesson(lesson)}
+                                          className="w-8 h-8 rounded-full bg-slate-50 dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 transition-colors inline-flex items-center justify-center opacity-0 group-hover:opacity-100 border border-slate-200 dark:border-slate-700"
+                                          title="Darsni o'chirish"
+                                        >
+                                          <i className="fas fa-trash text-xs"></i>
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+
+                                  {/* Quiz */}
+                                  {subModule.quizResponse && (
+                                    <div className="flex items-center gap-4 p-3 bg-amber-50/50 dark:bg-amber-900/10 rounded-2xl border border-amber-100 dark:border-amber-900/30 shadow-sm hover:border-amber-300 dark:hover:border-amber-700 transition-colors group cursor-pointer"
+                                         onClick={() => setManagingQuiz({ quiz: subModule.quizResponse, subModuleId: subModule.id })}>
+                                      <div className="w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center text-xs font-bold">
+                                        <i className="fas fa-tasks"></i>
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-bold text-amber-900 dark:text-amber-100 truncate flex items-center gap-2">
+                                          {subModule.quizResponse.name}
+                                          <span className="text-[10px] bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200 px-2 py-0.5 rounded uppercase font-bold tracking-wider">
+                                            {subModule.quizResponse.questions?.length || 0} Savol
+                                          </span>
+                                        </p>
+                                        <p className="text-xs text-amber-700/70 dark:text-amber-400/70 mt-0.5">
+                                          Modul testi
+                                        </p>
+                                      </div>
+                                      <div className="flex gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setManagingQuiz({ quiz: subModule.quizResponse, subModuleId: subModule.id });
+                                          }}
+                                          className="px-3 h-8 rounded-full bg-white dark:bg-slate-800 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors inline-flex items-center justify-center text-xs font-bold border border-amber-200 dark:border-amber-700/50 shadow-sm"
+                                          title="Savollarni Boshqarish"
+                                        >
+                                          <i className="fas fa-cog mr-1.5"></i> Savollar
+                                        </button>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setQuizTitle(subModule.quizResponse.name);
+                                            setQuizQuestions(subModule.quizResponse.questions || []);
+                                            setAddMode('QUIZ');
+                                            setLessonSubModuleId(subModule.id);
+                                            setIsAddPanelOpen(true);
+                                          }}
+                                          className="w-8 h-8 rounded-full bg-white dark:bg-slate-800 text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors inline-flex items-center justify-center opacity-0 group-hover:opacity-100 border border-slate-200 dark:border-slate-700 shadow-sm"
+                                          title="Testni tahrirlash"
+                                        >
+                                          <i className="fas fa-pen text-xs"></i>
+                                        </button>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDeleteQuiz(subModule.quizResponse, subModule.id);
+                                          }}
+                                          className="w-8 h-8 rounded-full bg-white dark:bg-slate-800 text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors inline-flex items-center justify-center opacity-0 group-hover:opacity-100 border border-slate-200 dark:border-slate-700 shadow-sm"
+                                          title="Testni o'chirish"
+                                        >
+                                          <i className="fas fa-trash text-xs"></i>
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="text-center py-8 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl text-slate-400 text-sm font-medium">
+                                  Hali darslar va testlar mavjud emas
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         ) : (
-          <div className="py-10 text-center text-slate-400 italic bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
-            Hozircha sub-modullar mavjud emas
-          </div>
-        )}
-      </div>
-
-      {/* ─── Existing lessons list ────────────────────────────────────────── */}
-      <div className="space-y-4">
-        <h4 className="font-bold text-slate-900 dark:text-slate-100 px-1">Mavjud darslar</h4>
-        {module.lessons.map((lesson, idx) => (
-          <div
-            key={lesson.id}
-            className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm flex items-center gap-4 hover:border-blue-200 dark:hover:border-blue-800 transition-all group"
-          >
-            <div className="w-12 h-12 bg-slate-50 dark:bg-slate-700 rounded-xl flex items-center justify-center text-slate-400 dark:text-slate-500 font-bold group-hover:bg-blue-50 dark:group-hover:bg-blue-900/20 group-hover:text-blue-600 transition-all shrink-0">
-              {idx + 1}
+          <div className="py-16 text-center text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800 rounded-3xl border border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center gap-4">
+            <div className="w-16 h-16 bg-slate-100 dark:bg-slate-900 rounded-full flex items-center justify-center text-2xl">
+              <i className="fas fa-layer-group text-slate-400"></i>
             </div>
-            <div className="flex-1 min-w-0">
-              <h5 className="font-bold text-slate-900 dark:text-slate-100 truncate">{lesson.title}</h5>
-              <p className="text-xs text-slate-400 mt-0.5">
-                {lesson.media?.length || 0} ta media
-              </p>
-            </div>
-            <div className="flex gap-2 shrink-0">
-              <button
-                onClick={() => handleEditLesson(lesson)}
-                className="w-9 h-9 rounded-lg border border-slate-100 dark:border-slate-700 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all"
-                title="Tahrirlash"
-              >
-                <i className="fas fa-edit text-sm"></i>
-              </button>
-              <button
-                onClick={() => handleDeleteLesson(lesson.id)}
-                className="w-9 h-9 rounded-lg border border-slate-100 dark:border-slate-700 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
-                title="O'chirish"
-              >
-                <i className="fas fa-trash text-sm"></i>
-              </button>
-            </div>
-          </div>
-        ))}
-        {module.lessons.length === 0 && (
-          <div className="py-10 text-center text-slate-400 italic bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
-            Hozircha darslar mavjud emas
+            <p className="font-medium">Hozircha sub-modullar mavjud emas</p>
+            <button
+              onClick={() => { setIsAddPanelOpen(true); setAddMode('SUB_MODULE'); }}
+              className="px-6 py-2.5 rounded-xl bg-orange-600 text-white font-bold hover:bg-orange-700 transition-colors shadow-md shadow-orange-500/20 mt-2"
+            >
+              Yangi sub-modul qo'shish
+            </button>
           </div>
         )}
       </div>
     </div>
+
+    {/* Delete Confirmation Modal */}
+    {itemToDelete && createPortal(
+      <div onClick={closeTopModal} className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[9999] flex items-center justify-center p-4 sm:p-6">
+        <div onClick={e => e.stopPropagation()} className="bg-white dark:bg-slate-800 w-full max-w-sm rounded-3xl shadow-2xl p-8 animate-in zoom-in-95 duration-200 m-auto">
+          <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <i className="fas fa-triangle-exclamation text-red-500 text-2xl"></i>
+          </div>
+          <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100 text-center mb-2">
+            {itemToDelete.type === 'SUB_MODULE' && "Sub-modulni o'chirish"}
+            {itemToDelete.type === 'LESSON' && "Darsni o'chirish"}
+            {itemToDelete.type === 'QUIZ' && "Quizni o'chirish"}
+            {itemToDelete.type === 'QUESTION' && "Savolni o'chirish"}
+            {itemToDelete.type === 'MEDIA' && "Media faylini o'chirish"}
+          </h3>
+          <p className="text-slate-500 dark:text-slate-400 text-center text-sm mb-4">Quyidagi kontentni o'chirmoqchisiz:</p>
+
+          <div className="flex items-center gap-3 p-4 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/40 rounded-2xl mb-4">
+            <div className="w-10 h-10 rounded-xl bg-white dark:bg-slate-700 text-red-500 flex items-center justify-center shadow-sm shrink-0">
+              <i className={`fas ${itemToDelete.type === 'SUB_MODULE' ? 'fa-layer-group' : itemToDelete.type === 'QUIZ' ? 'fa-tasks' : itemToDelete.type === 'QUESTION' ? 'fa-question-circle' : itemToDelete.type === 'MEDIA' ? 'fa-photo-film' : 'fa-book'}`}></i>
+            </div>
+            <div className="min-w-0">
+              <p className="font-bold text-slate-900 dark:text-slate-100 text-sm truncate">{itemToDelete.name}</p>
+              <p className="text-xs text-red-600 dark:text-red-400 font-medium truncate mt-0.5">Bu amal qaytarilmaydi!</p>
+            </div>
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              onClick={() => setItemToDelete(null)}
+              className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold rounded-xl transition-all text-sm"
+            >
+              Bekor qilish
+            </button>
+            <button
+              onClick={confirmDelete}
+              className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-lg shadow-red-500/30 transition-all text-sm flex items-center justify-center gap-2"
+            >
+              <i className="fas fa-trash-can"></i> O'chirish
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+
+    {/* Quiz Questions Modal */}
+    {managingQuiz && createPortal(
+      <div onClick={closeTopModal} className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[9999] flex items-center justify-center p-4 sm:p-6">
+        <div onClick={e => e.stopPropagation()} className="bg-white dark:bg-slate-800 w-full max-w-4xl rounded-3xl shadow-2xl p-6 md:p-8 animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-700 max-h-[90vh] flex flex-col m-auto">
+          <div className="flex justify-between items-center mb-6 shrink-0">
+            <div>
+              <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-3">
+                <i className="fas fa-tasks text-amber-500"></i>
+                {managingQuiz.quiz.name}
+              </h3>
+              <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Savollarni boshqarish</p>
+            </div>
+            <button onClick={() => { setManagingQuiz(null); setEditingQuestionId(null); }} className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors">
+              <i className="fas fa-times"></i>
+            </button>
+          </div>
+
+          <div className="flex justify-between items-center mb-4 shrink-0">
+            <h6 className="text-sm font-bold text-slate-700 dark:text-slate-300">Savollar jadvali ({managingQuiz.quiz.questions?.length || 0})</h6>
+            <button
+              onClick={() => {
+                setEditingQuestionId('new');
+                setQuestionForm({ text: '', options: ['', '', '', ''], correctAnswer: 0 });
+              }}
+              className="px-4 py-2 bg-orange-600 text-white text-sm font-bold rounded-xl hover:bg-orange-700 shadow-lg shadow-orange-500/30 transition-all flex items-center gap-2"
+            >
+              <i className="fas fa-plus"></i> Yangi savol
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto custom-scrollbar border border-slate-200 dark:border-slate-700 rounded-2xl bg-slate-50 dark:bg-slate-900/30 relative">
+            <table className="w-full text-left text-sm whitespace-nowrap">
+              <thead className="bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-semibold text-xs uppercase tracking-wider sticky top-0 z-10 shadow-sm border-b border-slate-200 dark:border-slate-700">
+                <tr>
+                  <th className="px-4 py-4 w-12 text-center">#</th>
+                  <th className="px-4 py-4 min-w-[250px] w-1/2">Savol matni</th>
+                  <th className="px-4 py-4 min-w-[250px] w-1/2">Variantlar</th>
+                  <th className="px-4 py-4 w-28 text-center">Amallar</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                {/* Add/Edit question form row */}
+                {(editingQuestionId === 'new' || managingQuiz.quiz.questions?.some((q: any) => q.id === editingQuestionId)) && (() => {
+                  return (
+                    <tr className="bg-orange-50/50 dark:bg-orange-900/10 relative z-0">
+                      <td className="px-4 py-4 text-center text-orange-600 font-bold">{editingQuestionId === 'new' ? '*' : '✎'}</td>
+                      <td className="px-4 py-4 whitespace-normal align-top">
+                        <textarea rows={4} placeholder="Savolni kiriting..." className="w-full text-sm px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition-shadow" value={questionForm.text} onChange={e => setQuestionForm(p => ({ ...p, text: e.target.value }))} />
+                      </td>
+                      <td className="px-4 py-4 whitespace-normal align-top">
+                        <div className="grid grid-cols-1 gap-2 w-full">
+                          {questionForm.options.map((opt, oIdx) => (
+                            <div key={oIdx} className="flex items-center gap-2">
+                              <input type="radio" name="modal-question-correct" checked={questionForm.correctAnswer === oIdx} onChange={() => setQuestionForm(p => ({ ...p, correctAnswer: oIdx }))} className="accent-orange-600 w-4 h-4 cursor-pointer shrink-0" title="To'g'ri javobni belgilash" />
+                              <input type="text" placeholder={`Variant ${String.fromCharCode(65 + oIdx)}`} className={`flex-1 text-sm px-3 py-2 rounded-xl border ${questionForm.correctAnswer === oIdx ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20 text-orange-900 dark:text-orange-100 font-medium' : 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900'} outline-none focus:border-orange-500 transition-colors`} value={opt} onChange={e => {
+                                const newOpts = [...questionForm.options];
+                                newOpts[oIdx] = e.target.value;
+                                setQuestionForm(p => ({ ...p, options: newOpts }));
+                              }} />
+                            </div>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 align-top">
+                        <div className="flex gap-2 justify-center">
+                          <button onClick={() => handleSaveQuestion(Number(managingQuiz.subModuleId), managingQuiz.quiz.id)} disabled={isSavingQuestion} className="w-9 h-9 rounded-xl bg-green-500 hover:bg-green-600 text-white flex items-center justify-center shadow-md transition-all disabled:opacity-50" title="Saqlash">
+                            {isSavingQuestion ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-check"></i>}
+                          </button>
+                          <button onClick={() => setEditingQuestionId(null)} className="w-9 h-9 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 flex items-center justify-center shadow-sm transition-all" title="Bekor qilish">
+                            <i className="fas fa-times"></i>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })()}
+
+                {/* Existing questions */}
+                {managingQuiz.quiz.questions && managingQuiz.quiz.questions.length > 0 ? (
+                  managingQuiz.quiz.questions.map((q: any, qIdx: number) => {
+                    if (editingQuestionId === q.id) return null; // Handled above
+
+                    return (
+                      <tr key={q.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                        <td className="px-4 py-4 text-center text-slate-500 font-bold align-top">{qIdx + 1}</td>
+                        <td className="px-4 py-4 text-slate-800 dark:text-slate-200 whitespace-normal align-top leading-relaxed text-sm font-medium">
+                          {q.text}
+                        </td>
+                        <td className="px-4 py-4 whitespace-normal align-top">
+                          <ul className="text-sm space-y-1.5 w-full">
+                            {q.options.map((opt: string, oIdx: number) => {
+                              const isCorrect = oIdx === q.correctAnswer;
+                              return (
+                                <li key={oIdx} className={`px-3 py-2 rounded-xl border ${isCorrect ? 'bg-green-50 border-green-200 text-green-700 dark:bg-green-900/20 dark:border-green-800 dark:text-green-400 font-bold shadow-sm' : 'border-transparent text-slate-600 dark:text-slate-400'}`}>
+                                  <span className="w-5 inline-block font-bold opacity-70">{String.fromCharCode(65 + oIdx)}.</span> {opt}
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </td>
+                        <td className="px-4 py-4 align-top">
+                          <div className="flex gap-2 justify-center">
+                            <button 
+                              onClick={() => {
+                                setQuestionForm({
+                                  text: q.text,
+                                  options: q.options.length >= 4 ? q.options : [...q.options, '', '', '', ''].slice(0, 4),
+                                  correctAnswer: q.correctAnswer >= 0 ? q.correctAnswer : 0
+                                });
+                                setEditingQuestionId(q.id);
+                              }}
+                              className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-orange-600 hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-all flex items-center justify-center"
+                              title="Tahrirlash"
+                            >
+                              <i className="fas fa-edit"></i>
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteQuestion(q.id, managingQuiz.quiz.id, managingQuiz.subModuleId)}
+                              className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 transition-all flex items-center justify-center"
+                              title="O'chirish"
+                            >
+                              <i className="fas fa-trash"></i>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  editingQuestionId !== 'new' && (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-12 text-center">
+                        <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                          <i className="fas fa-clipboard-list text-2xl text-slate-400"></i>
+                        </div>
+                        <p className="text-slate-500 dark:text-slate-400 font-medium">Hali savollar kiritilmagan</p>
+                        <p className="text-slate-400 dark:text-slate-500 text-xs mt-1">Yangi savol qo'shish tugmasini bosing</p>
+                      </td>
+                    </tr>
+                  )
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+  </>
   );
 };
 

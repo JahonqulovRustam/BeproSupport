@@ -48,7 +48,7 @@ const ModuleStatsDashboard: React.FC<ModuleStatsDashboardProps> = ({ module }) =
           <p className="text-slate-500 text-sm mb-6">Ushbu modul bo'yicha jamoaning umumiy natijalari</p>
           <div className="flex items-center justify-around">
             <div className="text-center">
-              <p className="text-4xl font-bold text-blue-600">{stats.avgScore}%</p>
+              <p className="text-4xl font-bold text-orange-600">{stats.avgScore}%</p>
               <p className="text-xs text-slate-400 uppercase font-bold mt-1">O'rtacha ball</p>
             </div>
             <div className="h-12 w-px bg-slate-100"></div>
@@ -137,18 +137,18 @@ const ModuleStatsDashboard: React.FC<ModuleStatsDashboardProps> = ({ module }) =
               <p className="text-sm text-slate-700 font-medium italic">"Ushbu holatda tizimning asosiy ulanish xatosini qanday bartaraf qilasiz?"</p>
               <div className="mt-3 flex items-center justify-between">
                 <span className="text-[10px] font-bold text-red-600">Xatolik darajasi: 42%</span>
-                <button className="text-[10px] font-bold text-blue-600 hover:underline">Savolni ko'rish</button>
+                <button className="text-[10px] font-bold text-orange-600 hover:underline">Savolni ko'rish</button>
               </div>
             </div>
             <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
               <h4 className="text-xs font-bold text-slate-500 uppercase mb-3">Tavsiya etilgan qo'shimcha darslar:</h4>
               <ul className="space-y-2">
                 <li className="flex items-center gap-2 text-xs text-slate-700">
-                  <i className="fas fa-circle-info text-blue-500"></i>
+                  <i className="fas fa-circle-info text-orange-500"></i>
                   SQL optimallashtirish bo'yicha master-klass
                 </li>
                 <li className="flex items-center gap-2 text-xs text-slate-700">
-                  <i className="fas fa-circle-info text-blue-500"></i>
+                  <i className="fas fa-circle-info text-orange-500"></i>
                   API xatolarini tahlil qilish texnikasi
                 </li>
               </ul>

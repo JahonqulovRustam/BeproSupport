@@ -39,7 +39,7 @@ const MyResults: React.FC<MyResultsProps> = ({ currentUser }) => {
     return (
       <div className="flex items-center justify-center py-32">
         <div className="text-center space-y-3">
-          <i className="fas fa-spinner fa-spin text-3xl text-blue-500"></i>
+          <i className="fas fa-spinner fa-spin text-3xl text-orange-500"></i>
           <p className="text-slate-400 text-sm">Natijalar yuklanmoqda...</p>
         </div>
       </div>
@@ -106,7 +106,7 @@ const MyResults: React.FC<MyResultsProps> = ({ currentUser }) => {
         <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
           <div className="p-6 border-b border-slate-100 dark:border-slate-700">
             <h3 className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              <i className="fas fa-history text-blue-600"></i>
+              <i className="fas fa-history text-orange-600"></i>
               Test tarixi
             </h3>
           </div>

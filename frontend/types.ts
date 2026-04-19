@@ -59,5 +59,6 @@ export interface User {
   login: string;
   password?: string;
   role: UserRole;
+  avatar?: string;
   allowedModules?: string[]; // IDs of modules this user can access
 }

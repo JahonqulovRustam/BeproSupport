@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { userService } from '../services/userService';
 import { User, UserRole, SystemModule } from '../types';
@@ -7,41 +6,37 @@ interface UserManagementProps {
   currentUser: User;
   users: User[];
   modules: SystemModule[];
-  onAddUser: (user: User) => void;
+  onAddUser: (users: User[]) => void;
   onDeleteUser: (id: string) => void;
   onUpdateUser: (user: User) => void;
 }
 
-const UserManagement: React.FC<UserManagementProps> = ({ currentUser, users, modules, onAddUser, onDeleteUser, onUpdateUser }) => {
+const UserManagement: React.FC<UserManagementProps> = ({ currentUser, users, onAddUser, onDeleteUser, onUpdateUser }) => {
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [username, setUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [role, setRole] = useState<'ADMIN' | 'EMPLOYEE' | 'LEED'>('EMPLOYEE');
-  const [selectedModules, setSelectedModules] = useState<string[]>([]);
+  const [role, setRole] = useState<UserRole>('EMPLOYEE');
+  const [saving, setSaving] = useState(false);
 
-  const getManageableRole = (): UserRole | null => {
-    if (currentUser.role === 'ADMIN') return 'EMPLOYEE';
-    return null;
-  };
+  React.useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowModal(false);
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, []);
 
-  const targetRole = getManageableRole();
-  const filteredUsers = users.filter(u => u.role === targetRole);
-
-  const availableModules = modules.filter(module => {
-    if (currentUser.role === 'ADMIN') return true;
-    return currentUser.allowedModules?.includes(module.id);
-  });
-
-  const handleToggleModule = (moduleId: string) => {
-    setSelectedModules(prev =>
-      prev.includes(moduleId)
-        ? prev.filter(id => id !== moduleId)
-        : [...prev, moduleId]
-    );
-  };
+  React.useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowModal(false);
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, []);
 
   const handleOpenAdd = () => {
     setEditingUser(null);
@@ -50,186 +45,252 @@ const UserManagement: React.FC<UserManagementProps> = ({ currentUser, users, mod
     setUsername('');
     setNewPassword('');
     setRole('EMPLOYEE');
-    setSelectedModules([]);
     setShowModal(true);
   };
 
   const handleOpenEdit = (user: User) => {
     setEditingUser(user);
-    // Split name if possible
-    const [f, l] = user.name.split(' ');
-    setFirstName(f || '');
-    setLastName(l || '');
+    const parts = user.name.split(' ');
+    setFirstName(parts[0] || '');
+    setLastName(parts.slice(1).join(' ') || '');
     setUsername(user.login);
-    setNewPassword(''); // Keep password empty unless changing
-    setRole(user.role as 'ADMIN' | 'EMPLOYEE' | 'LEED');
-    setSelectedModules(user.allowedModules || []);
+    setNewPassword('');
+    setRole(user.role);
     setShowModal(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("Rostdan ham bu foydalanuvchini o'chirmoqchimisiz?")) return;
+    try {
+      await userService.deleteUser(id);
+      onDeleteUser(id);
+    } catch (err) {
+      alert("Xatolik yuz berdi!");
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!role) return;
-
-    const userPayload = {
-      firstName,
-      lastName,
-      username,
-      password: newPassword,
-      role,
-    };
+    setSaving(true);
 
     try {
-      // POST new user
-      await userService.createUser(userPayload);
-      // Reload users
-      const updatedUsers = await userService.getAllUsers();
-      onAddUser && onAddUser(updatedUsers);
+      if (editingUser) {
+        // Edit mode (PATCH)
+        const updated = await userService.updateUser(editingUser.id, {
+          firstName,
+          lastName,
+          password: newPassword || undefined,
+          role: role as 'ADMIN' | 'EMPLOYEE' | 'LEAD'
+        });
+        onUpdateUser(updated);
+        // Also reload all users just to be safe
+        const updatedUsers = await userService.getAllUsers();
+        onAddUser(updatedUsers); 
+      } else {
+        // Add mode (POST)
+        await userService.createUser({
+          firstName,
+          lastName,
+          username,
+          password: newPassword,
+          role: role as 'ADMIN' | 'EMPLOYEE' | 'LEAD'
+        });
+        const updatedUsers = await userService.getAllUsers();
+        onAddUser(updatedUsers);
+      }
       setShowModal(false);
     } catch (error) {
-      alert('Xodim qo\'shishda xatolik!');
+      alert("Saqlashda xatolik yuz berdi! Username band bo'lishi mumkin.");
+      console.error(error);
+    } finally {
+      setSaving(false);
     }
   };
 
-  if (!targetRole) return null;
-
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex justify-between items-center bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+    <>
+      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="flex justify-between items-center bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-sm border border-slate-100 dark:border-slate-700">
         <div>
-          <h3 className="text-xl font-bold text-slate-900">Xodimlarni boshqarish</h3>
-          <p className="text-slate-500 text-sm">Tizimga yangi xodim qo'shish va boshqarish</p>
+          <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">Foydalanuvchilarni boshqarish</h3>
+          <p className="text-slate-500 dark:text-slate-400 text-sm">Tizimga yangi foydalanuvchi qo'shish va tahrirlash</p>
         </div>
         <button
           onClick={handleOpenAdd}
-          className="px-6 py-3 bg-blue-600 text-white rounded-2xl font-bold text-sm hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 flex items-center gap-2"
+          className="px-6 py-3 bg-orange-600 text-white rounded-2xl font-bold text-sm hover:bg-orange-700 transition-all shadow-lg shadow-orange-200 dark:shadow-orange-900/30 flex items-center gap-2"
         >
           <i className="fas fa-plus"></i>
-          Yangi Xodim
+          Yangi Foydalanuvchi
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {users.map(user => (
-          <div key={user.id} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 hover:shadow-md transition-all group">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400">
-                  <i className="fas fa-user text-xl"></i>
-                </div>
-                <div>
-                  <h4 className="font-bold text-slate-900">{user.name}</h4>
-                  <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg ${user.role === 'ADMIN' ? 'bg-purple-100 text-purple-600' : 'bg-slate-100 text-slate-600'}`}>
-                    {user.role}
-                  </span>
-                </div>
-              </div>
-              {/* Edit/Delete buttons can be added here if needed */}
-            </div>
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Login:</span>
-                <span className="text-slate-700 font-mono">{user.login}</span>
-              </div>
-            </div>
-          </div>
-        ))}
-        {users.length === 0 && (
-          <div className="col-span-full py-12 text-center bg-white rounded-3xl border border-dashed border-slate-200">
-            <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
-              <i className="fas fa-users text-2xl"></i>
-            </div>
-            <p className="text-slate-400">Hozircha hech qanday xodim mavjud emas</p>
-          </div>
-        )}
+      <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider font-bold">
+                <th className="p-4 border-b border-slate-100 dark:border-slate-700 font-semibold">Foydalanuvchi</th>
+                <th className="p-4 border-b border-slate-100 dark:border-slate-700 font-semibold">Login (Username)</th>
+                <th className="p-4 border-b border-slate-100 dark:border-slate-700 font-semibold">Rol</th>
+                <th className="p-4 border-b border-slate-100 dark:border-slate-700 font-semibold text-right">Harakatlar</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+              {users.map(user => (
+                <tr key={user.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors group">
+                  <td className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-400 dark:text-slate-500 font-bold text-sm shrink-0">
+                        {user.name.charAt(0).toUpperCase()}
+                      </div>
+                      <span className="font-bold text-slate-900 dark:text-slate-100">{user.name}</span>
+                    </div>
+                  </td>
+                  <td className="p-4">
+                    <span className="font-mono text-sm text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md">
+                      {user.login}
+                    </span>
+                  </td>
+                  <td className="p-4">
+                    <span className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full ${
+                      user.role === 'ADMIN' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400' : 
+                      user.role === 'LEAD' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 
+                      'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                    }`}>
+                      {user.role}
+                    </span>
+                  </td>
+                  <td className="p-4 text-right space-x-2">
+                    <button 
+                      onClick={() => handleOpenEdit(user)}
+                      className="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors inline-flex items-center justify-center opacity-0 group-hover:opacity-100"
+                      title="Tahrirlash"
+                    >
+                      <i className="fas fa-pen text-xs"></i>
+                    </button>
+                    <button 
+                      onClick={() => handleDelete(user.id)}
+                      disabled={user.id === currentUser.id}
+                      className="w-8 h-8 rounded-full bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors inline-flex items-center justify-center opacity-0 group-hover:opacity-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="O'chirish"
+                    >
+                      <i className="fas fa-trash text-xs"></i>
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {users.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="p-8 text-center text-slate-400">
+                    <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800/50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300 dark:text-slate-600">
+                      <i className="fas fa-users text-2xl"></i>
+                    </div>
+                    Hozircha hech qanday foydalanuvchi mavjud emas
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
+    </div>
 
-      {showModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-6">
-          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl p-8 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto custom-scrollbar">
+    {showModal && (
+      <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
+        <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-3xl shadow-2xl p-8 animate-in zoom-in-95 duration-200 border border-transparent dark:border-slate-700 max-h-[90vh] overflow-y-auto custom-scrollbar">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-2xl font-bold text-slate-900">
-                {editingUser ? `${targetRole}ni tahrirlash` : `Yangi ${targetRole}`}
+              <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+                {editingUser ? 'Foydalanuvchini tahrirlash' : 'Yangi foydalanuvchi'}
               </h3>
-              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
                 <i className="fas fa-times text-xl"></i>
               </button>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">Ism</label>
-                <input
-                  type="text"
-                  required
-                  value={firstName}
-                  onChange={e => setFirstName(e.target.value)}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Ismni kiriting"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase px-1 mb-1">Ism *</label>
+                  <input
+                    type="text"
+                    required
+                    value={firstName}
+                    onChange={e => setFirstName(e.target.value)}
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-orange-500 placeholder:text-slate-400 transition-all"
+                    placeholder="Ism"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase px-1 mb-1">Familiya *</label>
+                  <input
+                    type="text"
+                    required
+                    value={lastName}
+                    onChange={e => setLastName(e.target.value)}
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-orange-500 placeholder:text-slate-400 transition-all"
+                    placeholder="Familiya"
+                  />
+                </div>
               </div>
+
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">Familiya</label>
+                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase px-1 mb-1">Login (Username) *</label>
                 <input
                   type="text"
                   required
-                  value={lastName}
-                  onChange={e => setLastName(e.target.value)}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Familiyani kiriting"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">Username</label>
-                <input
-                  type="text"
-                  required
+                  disabled={!!editingUser}
                   value={username}
                   onChange={e => setUsername(e.target.value)}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-orange-500 disabled:opacity-50 placeholder:text-slate-400 transition-all"
                   placeholder="Username"
                 />
+                {editingUser && <p className="text-[10px] text-slate-400 mt-1 px-1">Login o'zgartirilmaydi.</p>}
               </div>
+
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">
-                  Parol {editingUser && '(o\'zgartirish uchun kiriting)'}
+                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase px-1 mb-1">
+                  Parol {editingUser && <span className="font-normal text-slate-400">(faqat o'zgartirish uchun)</span>}
                 </label>
                 <input
                   type="password"
                   required={!editingUser}
                   value={newPassword}
                   onChange={e => setNewPassword(e.target.value)}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-orange-500 placeholder:text-slate-400 transition-all"
                   placeholder="••••••"
                 />
               </div>
+
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">Rol</label>
+                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase px-1 mb-1">Rol *</label>
                 <select
                   value={role}
-                  onChange={e => setRole(e.target.value as 'ADMIN' | 'EMPLOYEE' | 'LEED')}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={e => setRole(e.target.value as UserRole)}
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-orange-500 transition-all"
                   required
                 >
                   <option value="ADMIN">ADMIN</option>
-                  <option value="EMPLOYEE">EMPLOYEE</option>
-                  <option value="LEED">LEED</option>
+                  <option value="EMPLOYEE">XODIM (EMPLOYEE)</option>
+                  <option value="LEAD">LEAD</option>
                 </select>
               </div>
 
-              {/* Ruxsat etilgan modullar maydoni olib tashlandi */}
-
               <button
                 type="submit"
-                className="w-full py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-lg shadow-blue-200 hover:bg-blue-700 transition-all mt-4"
+                disabled={saving}
+                className="w-full py-4 bg-orange-600 text-white font-bold rounded-2xl shadow-lg shadow-orange-200 dark:shadow-orange-900/30 hover:bg-orange-700 transition-all mt-4 flex items-center justify-center gap-2 disabled:opacity-70"
               >
-                {editingUser ? 'O\'zgarishlarni saqlash' : 'Saqlash'}
+                {saving ? (
+                  <><i className="fas fa-spinner fa-spin"></i> Saqlanmoqda...</>
+                ) : (
+                  editingUser ? "O'zgarishlarni saqlash" : "Qo'shish"
+                )}
               </button>
             </form>
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 };
 

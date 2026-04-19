@@ -22,6 +22,7 @@ export interface UserUpdate {
   firstName?: string;
   lastName?: string;
   password?: string;
+  role?: 'ADMIN' | 'EMPLOYEE' | 'LEAD';
 }
 
 // ─── Mapper ───────────────────────────────────────────────────────────────────
@@ -86,6 +87,7 @@ export const userService = {
     if (update.firstName?.trim()) payload.firstName = update.firstName.trim();
     if (update.lastName?.trim())  payload.lastName  = update.lastName.trim();
     if (update.password?.trim())  payload.password  = update.password.trim();
+    if (update.role)              payload.role      = update.role;
 
     const response = await apiClient.patch<UserResponse | void>(
       `/api/users/${id}`,

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { SystemModule, Lesson, User, Quiz } from '../types';
 import { API_BASE_URL } from '../services/config';
+import { progressService } from '../services/progressService';
 import QuizSolver from './QuizSolver';
 
 interface ModuleContentProps {
@@ -75,12 +76,52 @@ const normalizeSubModules = (module: SystemModule | null | undefined): SubModule
 
 const isQuizLesson = (lesson: Lesson): boolean => Boolean((lesson as any).questions && (lesson as any).questions.length > 0);
 
-const MediaRenderer: React.FC<{ media: MediaItem; title: string }> = ({ media, title }) => {
+const MediaRenderer: React.FC<{ media: MediaItem; title: string; lessonId?: string | number; currentUser?: User; onProgressUpdate?: (percentage: number) => void }> = ({ media, title, lessonId, currentUser, onProgressUpdate }) => {
   const isStream = media.url.startsWith('/api/media/stream');
+
+  const maxTimeRef = React.useRef(0);
+  const lastPostTimeRef = React.useRef(0);
+
+  const handleTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    if (!lessonId || !currentUser) return;
+    const video = e.currentTarget;
+    if (!video.duration) return;
+    
+    if (video.currentTime > maxTimeRef.current) {
+      maxTimeRef.current = video.currentTime;
+    }
+    
+    const percentage = (maxTimeRef.current / video.duration) * 100;
+    
+    const now = Date.now();
+    if (now - lastPostTimeRef.current > 5000) {
+      lastPostTimeRef.current = now;
+      progressService.updateLessonProgress(currentUser.id, Number(lessonId), percentage);
+      if (onProgressUpdate) onProgressUpdate(percentage);
+    }
+  };
+
+  const handleVideoEnded = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    if (!lessonId || !currentUser) return;
+    const video = e.currentTarget;
+    if (!video.duration) return;
+    
+    maxTimeRef.current = video.duration;
+    progressService.updateLessonProgress(currentUser.id, Number(lessonId), 100);
+    if (onProgressUpdate) onProgressUpdate(100);
+  };
+
   if (media.type === 'VIDEO') {
     if (isStream) {
       return (
-        <video key={String(media.id)} className="w-full h-full" controls src={buildMediaUrl(media.url)}>
+        <video 
+          key={String(media.id)} 
+          className="w-full h-full" 
+          controls 
+          src={buildMediaUrl(media.url)}
+          onTimeUpdate={handleTimeUpdate}
+          onEnded={handleVideoEnded}
+        >
           Sizning brauzeringiz videoni qo'llab-quvvatlamaydi.
         </video>
       );
@@ -117,12 +158,41 @@ const MediaRenderer: React.FC<{ media: MediaItem; title: string }> = ({ media, t
   );
 };
 
-const ModuleContent: React.FC<ModuleContentProps> = ({ module }) => {
+const ModuleContent: React.FC<ModuleContentProps> = ({ module, currentUser }) => {
   const [subModules, setSubModules] = useState<SubModule[]>(normalizeSubModules(module));
   const [selectedSubModuleId, setSelectedSubModuleId] = useState<string | number | null>(subModules[0]?.id ?? null);
   const [selectedContent, setSelectedContent] = useState<ContentItem | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string | number, boolean>>({});
   const [mediaIndex, setMediaIndex] = useState(0);
+  const [lessonCompleted, setLessonCompleted] = useState<Record<string, boolean>>({});
+
+  const filterVisibleLessons = (lessons: Lesson[] | undefined): Lesson[] => {
+    return (lessons ?? []).filter((lesson) => !isQuizLesson(lesson));
+  };
+  const currentSubModule = subModules.find((sub) => sub.id === selectedSubModuleId) || subModules[0] || null;
+
+  useEffect(() => {
+    if (!currentSubModule || !currentUser) return;
+    
+    const fetchProgress = async () => {
+      const newCompleted: Record<string, boolean> = {};
+      const visibleLessons = filterVisibleLessons(currentSubModule.lessons);
+      
+      const promises = visibleLessons.map(async (lesson) => {
+        if (!lesson.id) return;
+        const p = await progressService.getLessonProgress(currentUser.id, Number(lesson.id));
+        if (p) {
+          // Allow for both 'completed' and 'complated' (backend typo)
+          newCompleted[String(lesson.id)] = p.completed || p.complated || false;
+        }
+      });
+      
+      await Promise.all(promises);
+      setLessonCompleted(prev => ({ ...prev, ...newCompleted }));
+    };
+    
+    fetchProgress();
+  }, [selectedSubModuleId, currentUser, module]);
 
   useEffect(() => {
     const normalized = normalizeSubModules(module);
@@ -137,11 +207,6 @@ const ModuleContent: React.FC<ModuleContentProps> = ({ module }) => {
     setCollapsed(normalized.reduce((acc, sub) => ({ ...acc, [String(sub.id)]: true }), {} as Record<string | number, boolean>));
     setMediaIndex(0);
   }, [module]);
-
-  const filterVisibleLessons = (lessons: Lesson[] | undefined): Lesson[] => {
-    return (lessons ?? []).filter((lesson) => !isQuizLesson(lesson));
-  };
-  const currentSubModule = subModules.find((sub) => sub.id === selectedSubModuleId) || subModules[0] || null;
   const visibleLessons = currentSubModule ? filterVisibleLessons(currentSubModule.lessons) : [];
   const selectedLesson = selectedContent?.type === 'lesson' ? (selectedContent.data as Lesson) : null;
   const selectedQuiz = selectedContent?.type === 'quiz' ? (selectedContent.data as Quiz) : null;
@@ -165,15 +230,18 @@ const ModuleContent: React.FC<ModuleContentProps> = ({ module }) => {
   }, [currentSubModule]);
 
   const currentMediaList: MediaItem[] = [];
+  const addedUrls = new Set<string>();
   if (selectedLesson) {
     if (Array.isArray((selectedLesson as any).media)) {
       for (const item of (selectedLesson as any).media) {
-        if (item?.url && item?.type) {
+        if (item?.url && item?.type && !addedUrls.has(item.url)) {
+          addedUrls.add(item.url);
           currentMediaList.push({ id: item.id || item.url, type: item.type, url: item.url });
         }
       }
     }
-    if (selectedLesson.videoUrl) {
+    if (selectedLesson.videoUrl && !addedUrls.has(selectedLesson.videoUrl)) {
+      addedUrls.add(selectedLesson.videoUrl);
       currentMediaList.push({ id: `video-${selectedLesson.id}`, type: 'VIDEO', url: selectedLesson.videoUrl });
     }
   }
@@ -203,7 +271,22 @@ const ModuleContent: React.FC<ModuleContentProps> = ({ module }) => {
             <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm overflow-hidden">
               <div className="aspect-video bg-black flex items-center justify-center relative">
                 {currentMedia ? (
-                  <MediaRenderer media={currentMedia} title={selectedLesson.title} />
+                  <MediaRenderer 
+                    media={currentMedia} 
+                    title={selectedLesson.title} 
+                    lessonId={selectedLesson.id}
+                    currentUser={currentUser}
+                    onProgressUpdate={(percentage) => {
+                      if (percentage >= 90) {
+                        setLessonCompleted(prev => {
+                          if (!prev[String(selectedLesson.id)]) {
+                            return { ...prev, [String(selectedLesson.id)]: true };
+                          }
+                          return prev;
+                        });
+                      }
+                    }}
+                  />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-slate-400 flex-col gap-3">
                     <i className="fas fa-photo-film text-4xl"></i>
@@ -295,12 +378,15 @@ const ModuleContent: React.FC<ModuleContentProps> = ({ module }) => {
                                   setSelectedContent({ id: lesson.id, type: 'lesson', title: lesson.title, data: lesson });
                                   setMediaIndex(0);
                                 }}
-                                className={`w-full text-left rounded-2xl px-4 py-3 transition-all ${selectedContent?.id === lesson.id && selectedContent?.type === 'lesson' ? 'bg-blue-50 dark:bg-slate-900 border border-blue-200 dark:border-blue-700' : 'bg-slate-100 dark:bg-slate-900/50 hover:bg-slate-200 dark:hover:bg-slate-800'}`}
+                                className={`w-full text-left rounded-2xl px-4 py-3 transition-all ${selectedContent?.id === lesson.id && selectedContent?.type === 'lesson' ? 'bg-orange-50 dark:bg-slate-900 border border-orange-200 dark:border-orange-700' : 'bg-slate-100 dark:bg-slate-900/50 hover:bg-slate-200 dark:hover:bg-slate-800'}`}
                               >
                                 <div className="flex items-center justify-between gap-2">
                                   <span className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate flex items-center gap-2">
-                                    <i className="fas fa-book text-xs text-slate-500"></i>
+                                    <i className={`fas fa-book text-xs ${lessonCompleted[String(lesson.id)] ? 'text-green-500' : 'text-slate-500'}`}></i>
                                     {lesson.title}
+                                    {lessonCompleted[String(lesson.id)] && (
+                                      <i className="fas fa-check-circle text-green-500 ml-1" title="Dars yakunlangan"></i>
+                                    )}
                                   </span>
                                 </div>
                               </button>

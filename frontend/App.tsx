@@ -168,7 +168,7 @@ const App: React.FC = () => {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center">
         <div className="text-center space-y-4">
-          <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto">
+          <div className="w-16 h-16 bg-orange-600 rounded-2xl flex items-center justify-center mx-auto">
             <i className="fas fa-graduation-cap text-white text-3xl"></i>
           </div>
           <p className="text-slate-400 text-sm">Yuklanmoqda...</p>
@@ -180,14 +180,14 @@ const App: React.FC = () => {
   if (!currentUser) return <Login onLogin={handleLogin} />;
 
   const isAdmin = currentUser.role === 'ADMIN';
-  const activeModule = modules.find(m => m.id === activeModuleId) || modules[0];
+  const activeModule = modules.find(m => m.id === activeModuleId);
 
   const pageTitle: Record<ViewType, string> = {
     DASHBOARD:    `${activeModule?.name || 'Tizim'}: Analitika`,
     MODULE_STATS: `${activeModule?.name || 'Tizim'}: Jamoa statistikasi`,
     USERS:        'Foydalanuvchilar',
     SYSTEMS:      'Tizimlar',
-    SETTINGS:     'Sozlamalar',
+    SETTINGS:     'Profil',
     MY_RESULTS:   'Mening natijalarim',
     CONTENT:      activeModule?.name || 'Tizim',
     MANAGE:       `${activeModule?.name || 'Tizim'}: Tahrirlash`,
@@ -204,28 +204,11 @@ const App: React.FC = () => {
     MANAGE:       "Darslar va media fayllarni boshqarish",
   };
 
-  const emptyState = (
-    <div className="flex flex-col items-center justify-center py-20 bg-white dark:bg-slate-800 rounded-3xl border border-dashed border-slate-200 dark:border-slate-700">
-      <p className="text-slate-400">Hech qanday tizim topilmadi</p>
-    </div>
-  );
+  const emptyState = null;
 
   // ─── Render content — NO setView() calls inside here ─────────────────────────
   const renderContent = () => {
     console.log('view:', view, '| activeLessonForQuiz:', activeLessonForQuiz);
-    // Quiz takes priority over everything
-    if (activeLessonForQuiz) {
-      return (
-        <Quiz
-          questions={activeLessonForQuiz.questions}
-          lessonId={activeLessonForQuiz.id}
-          lessonTitle={activeLessonForQuiz.title}
-          currentUserId={currentUser.id}
-          onComplete={score => { console.log('Ball:', score); setActiveLessonForQuiz(null); }}
-          onCancel={() => setActiveLessonForQuiz(null)}
-        />
-      );
-    }
 
     switch (view) {
       case 'MY_RESULTS':
@@ -290,6 +273,19 @@ const App: React.FC = () => {
     }
   };
 
+  if (activeLessonForQuiz) {
+    return (
+      <Quiz
+        questions={activeLessonForQuiz.questions}
+        lessonId={activeLessonForQuiz.id}
+        lessonTitle={activeLessonForQuiz.title}
+        currentUserId={currentUser.id}
+        onComplete={score => { console.log('Ball:', score); setActiveLessonForQuiz(null); }}
+        onCancel={() => setActiveLessonForQuiz(null)}
+      />
+    );
+  }
+
   return (
     <>
       <div className="flex min-h-screen bg-slate-50 dark:bg-slate-900">
@@ -307,17 +303,23 @@ const App: React.FC = () => {
           onLogout={handleLogout}
           theme={theme}
           onToggleTheme={toggleTheme}
+          onGoHome={() => {
+            setActiveModuleId('');
+            setView('CONTENT');
+          }}
         />
 
         <main className="flex-1 p-8 max-h-screen overflow-y-auto custom-scrollbar">
-          <header className="mb-10">
-            <h2 className="text-3xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
-              {pageTitle[view]}
-            </h2>
-            <p className="text-slate-500 dark:text-slate-400 mt-1">
-              {pageSubtitle[view]}
-            </p>
-          </header>
+          {(view !== 'CONTENT' || activeModule) && (
+            <header className="mb-10">
+              <h2 className="text-3xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
+                {pageTitle[view]}
+              </h2>
+              <p className="text-slate-500 dark:text-slate-400 mt-1">
+                {pageSubtitle[view]}
+              </p>
+            </header>
+          )}
 
           {renderContent()}
         </main>

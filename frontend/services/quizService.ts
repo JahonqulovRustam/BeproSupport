@@ -83,7 +83,7 @@ export const quizService = {
    * POST /api/quiz
    */
   async createQuiz(name: string, subModuleId: number): Promise<Quiz> {
-    const payload: QuizRequest = {
+    const payload: QuizRequestBasic = {
       name,
       subModule_id: subModuleId,
     };
@@ -102,9 +102,10 @@ export const quizService = {
 
   /**
    * Create a question for a quiz/sub-module
-   * POST /api/questions
+   * POST /api/quiz/{quiz_id}/questions
    */
   async createQuestion(
+    quizId: number | string,
     text: string,
     options: string[],
     correctAnswer: string,
@@ -116,7 +117,7 @@ export const quizService = {
       correctAns: correctAnswer,
       subModule: subModuleId,
     };
-    const response = await apiClient.post<QuestionResponse>('/api/questions', payload);
+    const response = await apiClient.post<QuestionResponse>(`/api/quiz/${quizId}/questions`, payload);
     return mapQuestion(response.data);
   },
 
@@ -131,9 +132,10 @@ export const quizService = {
 
   /**
    * Update a question by ID
-   * PUT /api/questions/{id}
+   * PUT /api/quiz/{quiz_id}/questions/{id}
    */
   async updateQuestion(
+    quizId: number | string,
     id: number,
     text: string,
     options: string[],
@@ -146,7 +148,7 @@ export const quizService = {
       correctAns: correctAnswer,
       subModule: subModuleId,
     };
-    const response = await apiClient.put<QuestionResponse>(`/api/questions/${id}`, payload);
+    const response = await apiClient.put<QuestionResponse>(`/api/quiz/${quizId}/questions/${id}`, payload);
     return mapQuestion(response.data);
   },
 
@@ -161,9 +163,9 @@ export const quizService = {
 
   /**
    * Delete a question by ID
-   * DELETE /api/questions/{id}
+   * DELETE /api/quiz/{quiz_id}/questions/{id}
    */
-  async deleteQuestion(id: number): Promise<void> {
-    await apiClient.delete(`/api/questions/${id}`);
+  async deleteQuestion(quizId: number | string, id: number): Promise<void> {
+    await apiClient.delete(`/api/quiz/${quizId}/questions/${id}`);
   },
 };

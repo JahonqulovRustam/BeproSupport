@@ -108,7 +108,7 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
     return (
       <div className="flex items-center justify-center py-32">
         <div className="text-center space-y-3">
-          <i className="fas fa-spinner fa-spin text-3xl text-blue-500"></i>
+          <i className="fas fa-spinner fa-spin text-3xl text-orange-500"></i>
           <p className="text-slate-400 text-sm">Ma'lumotlar yuklanmoqda...</p>
         </div>
       </div>
@@ -121,7 +121,7 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
           <div className="flex justify-between items-start">
             <p className="text-slate-500 text-sm font-medium">O'rtacha o'zlashtirish</p>
-            <div className="w-8 h-8 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center">
+            <div className="w-8 h-8 bg-orange-50 text-orange-600 rounded-lg flex items-center justify-center">
               <i className="fas fa-percentage text-xs"></i>
             </div>
           </div>
@@ -153,7 +153,7 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
           </div>
           <div className="flex items-baseline gap-2 mt-2">
             <h4 className="text-3xl font-bold text-slate-900">{activeUserCount}</h4>
-            <span className="text-blue-500 text-xs font-bold">test topshirgan</span>
+            <span className="text-orange-500 text-xs font-bold">test topshirgan</span>
           </div>
         </div>
       </div>
@@ -162,7 +162,7 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
             <h3 className="font-bold text-slate-900 mb-6 flex items-center gap-2">
-              <i className="fas fa-chart-bar text-blue-600"></i>
+              <i className="fas fa-chart-bar text-orange-600"></i>
               Jamoa samaradorligi
             </h3>
             <div style={{ width: '100%', height: 256 }}>
@@ -209,7 +209,7 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
                   </div>
                   <div className="text-right">
                     <div className="w-16 h-2 bg-slate-100 rounded-full overflow-hidden mb-1">
-                      <div className="h-full bg-blue-600 rounded-full" style={{ width: `${emp.score}%` }} />
+                      <div className="h-full bg-orange-600 rounded-full" style={{ width: `${emp.score}%` }} />
                     </div>
                     <p className={`font-bold text-xs ${emp.score >= 80 ? 'text-green-600' : 'text-orange-500'}`}>{emp.score}%</p>
                   </div>
@@ -223,7 +223,7 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <h3 className="font-bold text-slate-900 flex items-center gap-2">
-            <i className="fas fa-clipboard-list text-blue-600"></i>
+            <i className="fas fa-clipboard-list text-orange-600"></i>
             So'nggi test natijalari
           </h3>
           <div className="relative w-full sm:w-64">
@@ -231,7 +231,7 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
             <input
               type="text"
               placeholder="Xodim nomi..."
-              className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20"
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
             />
@@ -285,7 +285,7 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
           <button
             onClick={handleExportExcel}
             disabled={filteredAttempts.length === 0}
-            className="text-blue-600 text-sm font-bold hover:underline disabled:text-slate-400 flex items-center gap-2"
+            className="text-orange-600 text-sm font-bold hover:underline disabled:text-slate-400 flex items-center gap-2"
           >
             <i className="fas fa-file-excel"></i> Excel yuklab olish
           </button>

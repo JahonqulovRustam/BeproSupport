@@ -15,6 +15,7 @@ interface SidebarProps {
   onLogout: () => void;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
+  onGoHome: () => void;
 }
 
 const roleNames: Record<UserRole, string> = {
@@ -37,6 +38,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onLogout,
   theme,
   onToggleTheme,
+  onGoHome,
 }) => {
   const role = currentUser.role;
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -63,7 +65,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const navBtn = (isActive: boolean) =>
     `w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
       isActive
-        ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
+        ? 'bg-orange-600 text-white shadow-lg shadow-orange-900/20'
         : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
     } ${isCollapsed ? 'justify-center' : ''}`;
 
@@ -76,16 +78,13 @@ const Sidebar: React.FC<SidebarProps> = ({
         } bg-slate-900 text-white h-screen flex flex-col sticky top-0 overflow-hidden transition-all duration-300`}
       >
         {/* Logo */}
-        <div className="p-4 flex items-center gap-3 border-b border-slate-800 min-w-0">
-          <div className="bg-blue-600 p-2 rounded-lg flex-shrink-0">
-            <i className="fas fa-graduation-cap text-xl"></i>
-          </div>
-          {!isCollapsed && (
-            <div className="overflow-hidden">
-              <h1 className="font-bold text-lg leading-tight truncate">Bepro support</h1>
-              <p className="text-[10px] text-slate-400 uppercase tracking-wider">{roleNames[role]} paneli</p>
-            </div>
-          )}
+        <div className={`p-4 flex items-center justify-center border-b border-slate-800 min-w-0 min-h-[73px]`}>
+          <img 
+            src="https://bepro.uz/wp-content/uploads/2024/07/logotype-horizontal.png" 
+            alt="BePro" 
+            className={`cursor-pointer transition-all duration-300 object-contain flex-shrink-0 ${isCollapsed ? 'w-8 h-8' : 'w-32 h-auto'}`}
+            onClick={onGoHome}
+          />
         </div>
 
         {/* Nav */}
@@ -132,7 +131,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               key={module.id}
               onClick={() => onSelectModule(module.id)}
               title={isCollapsed ? module.name : undefined}
-              className={navBtn(activeModuleId === module.id)}
+              className={navBtn(activeModuleId === module.id && ['CONTENT', 'MANAGE', 'MODULE_STATS'].includes(activeView))}
             >
               <i className={`fas ${module.icon} w-5 text-center flex-shrink-0`}></i>
               {!isCollapsed && <span className="truncate">{module.name}</span>}
@@ -178,11 +177,11 @@ const Sidebar: React.FC<SidebarProps> = ({
             {onViewSettings && (
               <button
                 onClick={onViewSettings}
-                title={isCollapsed ? 'Sozlamalar' : undefined}
+                title={isCollapsed ? 'Profil' : undefined}
                 className={navBtn(activeView === 'SETTINGS')}
               >
-                <i className="fas fa-gear w-5 text-center flex-shrink-0"></i>
-                {!isCollapsed && <span>Sozlamalar</span>}
+                <i className="fas fa-user-gear w-5 text-center flex-shrink-0"></i>
+                {!isCollapsed && <span>Profil</span>}
               </button>
             )}
           </div>
@@ -201,7 +200,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   <i className={`fas ${theme === 'dark' ? 'fa-sun' : 'fa-moon'} w-4 text-center text-slate-400`}></i>
                   {!isCollapsed && (theme === 'dark' ? 'Kunduzgi rejim' : 'Tungi rejim')}
                 </div>
-                <div className={`w-10 h-5 rounded-full transition-colors relative ${theme === 'dark' ? 'bg-blue-600' : 'bg-slate-600'}`}>
+                <div className={`w-10 h-5 rounded-full transition-colors relative ${theme === 'dark' ? 'bg-orange-600' : 'bg-slate-600'}`}>
                   <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${theme === 'dark' ? 'translate-x-5' : 'translate-x-0.5'}`} />
                 </div>
               </button>
@@ -210,8 +209,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                 onClick={() => { setShowUserMenu(false); onViewSettings?.(); }}
                 className="w-full flex items-center gap-3 px-4 py-3 text-slate-300 hover:bg-slate-700 hover:text-white transition-all text-sm font-medium"
               >
-                <i className="fas fa-gear w-4 text-center text-slate-400"></i>
-                {!isCollapsed && 'Sozlamalar'}
+                <i className="fas fa-user-gear w-4 text-center text-slate-400"></i>
+                {!isCollapsed && 'Profil'}
               </button>
               <div className="border-t border-slate-700" />
               <button
