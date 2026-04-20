@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { User } from '../types';
+import { User, Question } from '../types';
 import { testAttemptService, TestAttemptResponse } from '../services/testAttempService';
+import { quizService } from '../services/quizService';
 
 interface MyResultsProps {
   currentUser: User;
@@ -10,6 +11,8 @@ const MyResults: React.FC<MyResultsProps> = ({ currentUser }) => {
   const [attempts, setAttempts] = useState<TestAttemptResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [expandedAttemptId, setExpandedAttemptId] = useState<number | null>(null);
+  const [attemptQuestions, setAttemptQuestions] = useState<Record<number, Question[]>>({});
 
   useEffect(() => {
     const fetch = async () => {
@@ -34,6 +37,22 @@ const MyResults: React.FC<MyResultsProps> = ({ currentUser }) => {
   const passedTests = attempts.filter(a => a.passed).length;
   const avgScore    = totalTests > 0 ? Math.round(attempts.reduce((sum, a) => sum + a.scorePercentage, 0) / totalTests) : 0;
   const bestScore   = totalTests > 0 ? Math.round(Math.max(...attempts.map(a => a.scorePercentage))) : 0;
+
+  const toggleAttempt = async (attempt: TestAttemptResponse) => {
+    if (expandedAttemptId === attempt.id) {
+      setExpandedAttemptId(null);
+      return;
+    }
+    setExpandedAttemptId(attempt.id);
+    if (attempt.quizId && !attemptQuestions[attempt.quizId]) {
+      try {
+        const questions = await quizService.getQuizQuestions(attempt.quizId);
+        setAttemptQuestions(prev => ({ ...prev, [attempt.quizId]: questions }));
+      } catch (err) {
+        console.error('Failed to fetch questions for attempt:', err);
+      }
+    }
+  };
 
   if (loading) {
     return (
@@ -120,51 +139,89 @@ const MyResults: React.FC<MyResultsProps> = ({ currentUser }) => {
               });
 
               return (
-                <div key={attempt.id} className="p-5 flex items-center gap-4 hover:bg-slate-50/50 dark:hover:bg-slate-700/40 transition-colors">
-                  {/* Index */}
-                  <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 flex items-center justify-center text-xs font-bold shrink-0">
-                    {idx + 1}
-                  </div>
-
-                  {/* Lesson name */}
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold text-slate-900 dark:text-slate-100 text-sm truncate">{attempt.lesson}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">{date}</p>
-                  </div>
-
-                  {/* Correct / Total */}
-                  <div className="text-center hidden sm:block">
-                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                      {attempt.correctAnswers} / {attempt.totalQuestions}
-                    </p>
-                    <p className="text-[10px] text-slate-400">to'g'ri javob</p>
-                  </div>
-
-                  {/* Score bar */}
-                  <div className="w-24 hidden md:block">
-                    <div className="w-full h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all ${score >= 80 ? 'bg-green-500' : 'bg-orange-400'}`}
-                        style={{ width: `${score}%` }}
-                      />
+                <div key={attempt.id} className="flex flex-col border-b border-slate-100 dark:border-slate-700 last:border-0 overflow-hidden">
+                  <div 
+                    onClick={() => toggleAttempt(attempt)}
+                    className="p-5 flex items-center gap-4 hover:bg-slate-50/50 dark:hover:bg-slate-700/40 transition-colors cursor-pointer"
+                  >
+                    {/* Index */}
+                    <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 flex items-center justify-center text-xs font-bold shrink-0">
+                      {idx + 1}
                     </div>
-                  </div>
 
-                  {/* Score % */}
-                  <div className="text-right shrink-0">
-                    <p className={`text-lg font-extrabold ${score >= 80 ? 'text-green-500' : 'text-orange-400'}`}>
-                      {score}%
-                    </p>
-                  </div>
+                    {/* Lesson name */}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-slate-900 dark:text-slate-100 text-sm truncate">{attempt.lesson || `Test #${attempt.quizId}`}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">{date}</p>
+                    </div>
 
-                  {/* Pass/Fail badge */}
-                  <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider shrink-0 ${
-                    attempt.passed
-                      ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                      : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                  }`}>
-                    {attempt.passed ? "O'tdi" : 'Yiqildi'}
-                  </span>
+                    {/* Correct / Total */}
+                    <div className="text-center hidden sm:block">
+                      <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                        {attempt.correctAnswers} / {attempt.totalQuestions}
+                      </p>
+                      <p className="text-[10px] text-slate-400">to'g'ri javob</p>
+                    </div>
+
+                    {/* Score bar */}
+                    <div className="w-24 hidden md:block">
+                      <div className="w-full h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${score >= 80 ? 'bg-green-500' : 'bg-orange-400'}`}
+                          style={{ width: `${score}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Score % */}
+                    <div className="text-right shrink-0">
+                      <p className={`text-lg font-extrabold ${score >= 80 ? 'text-green-500' : 'text-orange-400'}`}>
+                        {score}%
+                      </p>
+                    </div>
+
+                    {/* Pass/Fail badge */}
+                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider shrink-0 mr-4 ${
+                      attempt.passed
+                        ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                        : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                    }`}>
+                      {attempt.passed ? "O'tdi" : 'Yiqildi'}
+                    </span>
+                    
+                    <i className={`fas fa-chevron-down text-slate-400 transition-transform ${expandedAttemptId === attempt.id ? 'rotate-180' : ''}`}></i>
+                  </div>
+                  
+                  {expandedAttemptId === attempt.id && attempt.answers && (
+                    <div className="bg-slate-50/50 dark:bg-slate-900/30 p-6 border-t border-slate-100 dark:border-slate-700 animate-fadeIn">
+                      <h4 className="font-bold text-slate-800 dark:text-slate-200 mb-4 flex items-center gap-2">
+                        <i className="fas fa-list-ol text-blue-500"></i> Javoblar tafsiloti
+                      </h4>
+                      <div className="space-y-4">
+                        {attempt.answers.map((answer, i) => {
+                          const q = attemptQuestions[attempt.quizId]?.find(q => q.id === answer.questionId.toString());
+                          return (
+                            <div key={i} className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                              <p className="font-semibold text-slate-800 dark:text-slate-200 mb-3 text-sm leading-relaxed">
+                                <span className="text-slate-400 mr-1">{i + 1}.</span> {q ? q.text : `Savol #${answer.questionId}`}
+                              </p>
+                              <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700">
+                                <span className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${answer.correct ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'}`}>
+                                  <i className={`fas fa-${answer.correct ? 'check' : 'times'} text-sm`}></i>
+                                </span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium uppercase tracking-wider mb-0.5">Sizning javobingiz</p>
+                                  <p className={`text-sm font-bold truncate ${answer.correct ? 'text-slate-900 dark:text-slate-100' : 'text-red-600 dark:text-red-400'}`}>
+                                    {answer.selectedAnswer || 'Belgilanmagan'}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}

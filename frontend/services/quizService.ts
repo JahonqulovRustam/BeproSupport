@@ -14,6 +14,8 @@ interface QuizResponse {
   id: number;
   name: string;
   questions: QuestionResponse[];
+  timeLimitInMinutes?: number | null;
+  passingScore?: number | null;
 }
 
 interface QuestionRequestBody {
@@ -26,11 +28,15 @@ interface QuizRequestWithQuestions {
   name: string;
   subModule_id: number;
   questionRequests: QuestionRequestBody[];
+  timeLimitInMinutes: number | null;
+  passingScore: number | null;
 }
 
 interface QuizRequestBasic {
   name: string;
   subModule_id: number;
+  timeLimitInMinutes: number | null;
+  passingScore: number | null;
 }
 
 interface QuestionRequest {
@@ -53,6 +59,8 @@ const mapQuiz = (q: QuizResponse, subModuleId?: string): Quiz => ({
   name: q.name,
   questions: (q.questions || []).map(mapQuestion),
   subModuleId: subModuleId || '',
+  timeLimitInMinutes: q.timeLimitInMinutes ?? null,
+  passingScore: q.passingScore ?? null,
 });
 
 // ─── Service ──────────────────────────────────────────────────────────────────
@@ -67,12 +75,16 @@ export const quizService = {
   async createQuizWithQuestions(
     name: string,
     subModuleId: number,
-    questions: QuestionRequestBody[] = []
+    questions: QuestionRequestBody[] = [],
+    timeLimitInMinutes: number | null = null,
+    passingScore: number | null = null
   ): Promise<Quiz> {
     const payload: QuizRequestWithQuestions = {
       name,
       subModule_id: subModuleId,
       questionRequests: questions,
+      timeLimitInMinutes,
+      passingScore,
     };
     const response = await apiClient.post<QuizResponse>('/api/quiz', payload);
     return mapQuiz(response.data, subModuleId.toString());
@@ -82,10 +94,17 @@ export const quizService = {
    * Create a new quiz for a sub-module (without questions)
    * POST /api/quiz
    */
-  async createQuiz(name: string, subModuleId: number): Promise<Quiz> {
+  async createQuiz(
+    name: string, 
+    subModuleId: number,
+    timeLimitInMinutes: number | null = null,
+    passingScore: number | null = null
+  ): Promise<Quiz> {
     const payload: QuizRequestBasic = {
       name,
       subModule_id: subModuleId,
+      timeLimitInMinutes,
+      passingScore,
     };
     const response = await apiClient.post<QuizResponse>('/api/quiz', payload);
     return mapQuiz(response.data, subModuleId.toString());

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import * as XLSX from 'xlsx';
-import { SystemModule, User } from '../types';
-import { testAttemptService, TestAttemptResponse } from '../services/testAttempService';
+import { SystemModule, Question } from '../types';
+import { testAttemptService, TestAttemptResponse, TestAnswerResponse } from '../services/testAttempService';
 import { userService } from '../services/userService';
+import { quizService } from '../services/quizService';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
@@ -14,18 +15,22 @@ interface LeadDashboardProps {
 interface EnrichedAttempt {
   id: number;
   userName: string;
-  lessonId: number;
+  quizId: number;
   totalQuestions: number;
   correctAnswers: number;
   scorePercentage: number;
   passed: boolean;
   submittedAt: string;
+  answers: TestAnswerResponse[];
 }
 
 const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
   const [attempts, setAttempts] = useState<EnrichedAttempt[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedAttemptForAnalysis, setSelectedAttemptForAnalysis] = useState<EnrichedAttempt | null>(null);
+  const [analysisQuestions, setAnalysisQuestions] = useState<Question[]>([]);
+  const [loadingAnalysis, setLoadingAnalysis] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -41,13 +46,14 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
 
         const enriched: EnrichedAttempt[] = rawAttempts.map(a => ({
           id: a.id,
-          userName: userMap[a.userId] || `Foydalanuvchi #${a.userId}`,
-          lessonId: a.lessonId ?? 0,
+          userName: a.user || userMap[(a as any).userId] || `Foydalanuvchi #${(a as any).userId || a.id}`,
+          quizId: a.quizId ?? 0,
           totalQuestions: a.totalQuestions,
           correctAnswers: a.correctAnswers,
           scorePercentage: Math.round(a.scorePercentage),
           passed: a.passed,
           submittedAt: new Date(a.submittedAt).toLocaleDateString('uz-UZ'),
+          answers: a.answers || [],
         }));
 
         setAttempts(enriched);
@@ -91,7 +97,7 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
     if (filteredAttempts.length === 0) return;
     const dataToExport = filteredAttempts.map(a => ({
       'Xodim': a.userName,
-      'Dars ID': a.lessonId,
+      'Test ID': a.quizId,
       'Jami savollar': a.totalQuestions,
       "To'g'ri javoblar": a.correctAnswers,
       'Ball (%)': a.scorePercentage,
@@ -102,6 +108,19 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Test Natijalari');
     XLSX.writeFile(wb, `natijalar_${new Date().toLocaleDateString()}.xlsx`);
+  };
+
+  const handleAnalyze = async (attempt: EnrichedAttempt) => {
+    setSelectedAttemptForAnalysis(attempt);
+    setLoadingAnalysis(true);
+    try {
+      const questions = await quizService.getQuizQuestions(attempt.quizId);
+      setAnalysisQuestions(questions);
+    } catch (err) {
+      console.error('Failed to load questions for analysis:', err);
+    } finally {
+      setLoadingAnalysis(false);
+    }
   };
 
   if (loading) {
@@ -247,13 +266,14 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
                 <th className="px-6 py-4 text-center">Ball</th>
                 <th className="px-6 py-4">Sana</th>
                 <th className="px-6 py-4">Holat</th>
+                <th className="px-6 py-4 text-right">Amallar</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredAttempts.map(a => (
                 <tr key={a.id} className="hover:bg-slate-50/50 transition-colors">
                   <td className="px-6 py-4 font-medium text-slate-900 text-sm">{a.userName}</td>
-                  <td className="px-6 py-4 text-slate-500 text-sm">Dars #{a.lessonId}</td>
+                  <td className="px-6 py-4 text-slate-500 text-sm">Test #{a.quizId}</td>
                   <td className="px-6 py-4 text-center text-sm text-slate-600">{a.correctAnswers} / {a.totalQuestions}</td>
                   <td className="px-6 py-4 text-center">
                     <span className={`font-bold ${a.scorePercentage >= 80 ? 'text-green-600' : 'text-orange-500'}`}>
@@ -268,11 +288,19 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
                       {a.passed ? "O'tdi" : 'Yiqildi'}
                     </span>
                   </td>
+                  <td className="px-6 py-4 text-right">
+                    <button
+                      onClick={() => handleAnalyze(a)}
+                      className="px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 ml-auto"
+                    >
+                      <i className="fas fa-search"></i> Tahlil qilish
+                    </button>
+                  </td>
                 </tr>
               ))}
               {filteredAttempts.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-6 py-10 text-center text-slate-400 text-sm italic">
+                  <td colSpan={7} className="px-6 py-10 text-center text-slate-400 text-sm italic">
                     {attempts.length === 0 ? 'Hali hech kim test topshirmagan' : "Ma'lumot topilmadi"}
                   </td>
                 </tr>
@@ -291,6 +319,106 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
           </button>
         </div>
       </div>
+
+      {/* Analysis Modal */}
+      {selectedAttemptForAnalysis && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <div>
+                <h3 className="font-bold text-slate-900 text-lg flex items-center gap-2">
+                  <i className="fas fa-microscope text-blue-600"></i>
+                  Test Tahlili: {selectedAttemptForAnalysis.userName}
+                </h3>
+                <p className="text-sm text-slate-500 mt-1">Test #{selectedAttemptForAnalysis.quizId} · {selectedAttemptForAnalysis.submittedAt}</p>
+              </div>
+              <button
+                onClick={() => setSelectedAttemptForAnalysis(null)}
+                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200 text-slate-500 transition-colors"
+              >
+                <i className="fas fa-times"></i>
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50 custom-scrollbar">
+              {loadingAnalysis ? (
+                <div className="flex flex-col items-center justify-center py-20">
+                  <i className="fas fa-circle-notch fa-spin text-3xl text-blue-500 mb-4"></i>
+                  <p className="text-slate-500">Savollar yuklanmoqda...</p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {selectedAttemptForAnalysis.answers.map((ans, idx) => {
+                    const question = analysisQuestions.find(q => q.id === ans.questionId.toString());
+                    return (
+                      <div key={idx} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+                        <div className="flex items-start gap-4 mb-4">
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 font-bold text-sm ${ans.correct ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                            {idx + 1}
+                          </div>
+                          <div>
+                            <p className="font-bold text-slate-900 text-[15px] leading-relaxed">
+                              {question ? question.text : `Savol ID: ${ans.questionId}`}
+                            </p>
+                          </div>
+                        </div>
+
+                        {question && (
+                          <div className="ml-12 grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                            {question.options.map((opt, oIdx) => (
+                              <div key={oIdx} className="flex items-center gap-2 text-sm p-2 rounded-lg border border-slate-100 bg-slate-50">
+                                <span className="w-5 h-5 rounded bg-slate-200 text-slate-600 flex items-center justify-center text-xs font-bold shrink-0">{String.fromCharCode(65 + oIdx)}</span>
+                                <span className="text-slate-700">{opt}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="ml-12 flex flex-col sm:flex-row sm:items-center gap-4 p-4 rounded-xl bg-slate-50 border border-slate-100">
+                          <div className="flex-1">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Xodim javobi</p>
+                            <div className="flex items-center gap-2">
+                              <i className={`fas fa-${ans.correct ? 'check-circle text-green-500' : 'times-circle text-red-500'}`}></i>
+                              <p className={`font-semibold text-sm ${ans.correct ? 'text-green-700' : 'text-red-700'}`}>
+                                {ans.selectedAnswer || 'Belgilanmagan'}
+                              </p>
+                            </div>
+                          </div>
+                          {!ans.correct && question && question.correctAnswer !== undefined && (
+                            <div className="flex-1 sm:border-l border-slate-200 sm:pl-4 pt-3 sm:pt-0 border-t sm:border-t-0">
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">To'g'ri javob</p>
+                              <div className="flex items-center gap-2">
+                                <i className="fas fa-check-circle text-green-500"></i>
+                                <p className="font-semibold text-sm text-green-700">
+                                  {question.options[question.correctAnswer]}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {selectedAttemptForAnalysis.answers.length === 0 && (
+                    <div className="text-center py-10 text-slate-500">
+                      Ushbu test urinishida javoblar mavjud emas.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            
+            <div className="p-4 border-t border-slate-100 flex justify-end bg-white">
+              <button
+                onClick={() => setSelectedAttemptForAnalysis(null)}
+                className="px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold transition-colors"
+              >
+                Yopish
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

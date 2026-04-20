@@ -2,13 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Quiz, Question } from '../types';
 import { quizService } from '../services/quizService';
+import { testAttemptService, TestAttemptResponse } from '../services/testAttempService';
 
 interface QuizSolverProps {
   quiz: Quiz;
   onComplete?: (results: { correctCount: number; totalCount: number; score: number }) => void;
 }
 
-type QuizStatus = 'INTRO' | 'IN_PROGRESS' | 'FINISHED';
+type QuizStatus = 'INTRO' | 'IN_PROGRESS' | 'SUBMITTING' | 'FINISHED';
 
 const QuizSolver: React.FC<QuizSolverProps> = ({ quiz, onComplete }) => {
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -18,6 +19,8 @@ const QuizSolver: React.FC<QuizSolverProps> = ({ quiz, onComplete }) => {
   
   const [status, setStatus] = useState<QuizStatus>('INTRO');
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [result, setResult] = useState<TestAttemptResponse | null>(null);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
 
   useEffect(() => {
     const loadQuestions = async () => {
@@ -41,7 +44,49 @@ const QuizSolver: React.FC<QuizSolverProps> = ({ quiz, onComplete }) => {
     setStatus('IN_PROGRESS');
     setCurrentIndex(0);
     setSelectedAnswers({});
+    if (quiz.timeLimitInMinutes) {
+      setTimeLeft(quiz.timeLimitInMinutes * 60);
+    } else {
+      setTimeLeft(null);
+    }
   };
+
+  const submitQuiz = async () => {
+    setStatus('SUBMITTING');
+    try {
+      const answers = Object.entries(selectedAnswers).map(([qId, optionIdx]) => {
+        const q = questions.find(q => q.id === qId);
+        return {
+          questionId: Number(qId),
+          selectedAnswer: q ? q.options[optionIdx] : ''
+        };
+      });
+      const attemptResult = await testAttemptService.submit({
+        quizId: Number(quiz.id),
+        totalQuestions: questions.length,
+        answers
+      });
+      setResult(attemptResult);
+      setStatus('FINISHED');
+    } catch (err) {
+      console.error('Failed to submit quiz:', err);
+      setError('Testni saqlashda xatolik yuz berdi. Iltimos qaytadan urinib ko\'ring.');
+      setStatus('INTRO');
+    }
+  };
+
+  useEffect(() => {
+    if (status === 'IN_PROGRESS' && timeLeft !== null) {
+      if (timeLeft <= 0) {
+        submitQuiz();
+        return;
+      }
+      const timer = setTimeout(() => {
+        setTimeLeft(timeLeft - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [status, timeLeft]);
 
   const handleSelect = (optionIndex: number) => {
     const currentQuestion = questions[currentIndex];
@@ -51,11 +96,11 @@ const QuizSolver: React.FC<QuizSolverProps> = ({ quiz, onComplete }) => {
     }));
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (currentIndex < questions.length - 1) {
       setCurrentIndex(currentIndex + 1);
     } else {
-      setStatus('FINISHED');
+      await submitQuiz();
     }
   };
 
@@ -121,11 +166,11 @@ const QuizSolver: React.FC<QuizSolverProps> = ({ quiz, onComplete }) => {
           </div>
           <div className="flex justify-between items-center pb-4 border-b border-slate-200 dark:border-slate-700">
             <span className="text-slate-600 dark:text-slate-400 font-medium">O'tish bali (minimum):</span>
-            <span className="font-bold text-slate-900 dark:text-slate-100">70%</span>
+            <span className="font-bold text-slate-900 dark:text-slate-100">{quiz.passingScore ?? 85}%</span>
           </div>
           <div className="flex justify-between items-center pb-4 border-b border-slate-200 dark:border-slate-700">
             <span className="text-slate-600 dark:text-slate-400 font-medium">Vaqt chegarasi:</span>
-            <span className="font-bold text-slate-900 dark:text-slate-100">Cheklanmagan</span>
+            <span className="font-bold text-slate-900 dark:text-slate-100">{quiz.timeLimitInMinutes ? `${quiz.timeLimitInMinutes} daqiqa` : 'Cheklanmagan'}</span>
           </div>
           <div className="flex justify-between items-center">
             <span className="text-slate-600 dark:text-slate-400 font-medium">Javoblarni o'zgartirish:</span>
@@ -146,19 +191,20 @@ const QuizSolver: React.FC<QuizSolverProps> = ({ quiz, onComplete }) => {
   }
 
   // ─── Full-Screen Portals for IN_PROGRESS and FINISHED ─────────────────────
-  const correctCount = Object.entries(selectedAnswers).reduce((count, [qId, answer]) => {
-    const question = questions.find((q) => q.id === qId);
-    return count + (question && question.correctAnswer === answer ? 1 : 0);
-  }, 0);
-  const score = Math.round((correctCount / questions.length) * 100);
-  const passed = score >= 70;
-
+  
   const currentQuestion = questions[currentIndex];
   const progressPercent = ((currentIndex) / questions.length) * 100;
 
   return createPortal(
     <div className="fixed inset-0 z-[99999] bg-slate-50 dark:bg-slate-900 flex flex-col animate-in fade-in duration-300">
       
+      {status === 'SUBMITTING' && (
+        <div className="flex-1 flex flex-col items-center justify-center p-6">
+          <div className="w-16 h-16 border-4 border-blue-200 dark:border-blue-900 border-t-blue-600 dark:border-t-blue-400 rounded-full animate-spin mb-4"></div>
+          <p className="text-xl font-bold text-slate-900 dark:text-slate-100">Javoblaringiz tekshirilmoqda...</p>
+        </div>
+      )}
+
       {status === 'IN_PROGRESS' && (
         <>
           {/* Formal Top Bar */}
@@ -172,12 +218,20 @@ const QuizSolver: React.FC<QuizSolverProps> = ({ quiz, onComplete }) => {
                 <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Davom etmoqda...</p>
               </div>
             </div>
-            <button
-              onClick={handleExit}
-              className="text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 font-medium text-sm flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-            >
-              <i className="fas fa-power-off"></i> Testdan chiqish
-            </button>
+            <div className="flex items-center gap-6">
+              {timeLeft !== null && (
+                <div className={`flex items-center gap-2 font-bold text-lg ${timeLeft < 60 ? 'text-red-500 animate-pulse' : 'text-slate-700 dark:text-slate-300'}`}>
+                  <i className="fas fa-clock"></i>
+                  {Math.floor(timeLeft / 60).toString().padStart(2, '0')}:{(timeLeft % 60).toString().padStart(2, '0')}
+                </div>
+              )}
+              <button
+                onClick={handleExit}
+                className="text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 font-medium text-sm flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+              >
+                <i className="fas fa-power-off"></i> Testdan chiqish
+              </button>
+            </div>
           </header>
 
           {/* Progress Bar */}
@@ -254,15 +308,15 @@ const QuizSolver: React.FC<QuizSolverProps> = ({ quiz, onComplete }) => {
         </>
       )}
 
-      {status === 'FINISHED' && (
+      {status === 'FINISHED' && result && (
         <div className="flex-1 flex flex-col overflow-y-auto custom-scrollbar p-6">
           <div className="m-auto w-full max-w-3xl bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
             
             <div className="text-center p-10 border-b border-slate-200 dark:border-slate-700">
               <div className={`w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 ${
-                passed ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400' : 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'
+                result.passed ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400' : 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'
               }`}>
-                <i className={`fas ${passed ? 'fa-check' : 'fa-times'} text-5xl`}></i>
+                <i className={`fas ${result.passed ? 'fa-check' : 'fa-times'} text-5xl`}></i>
               </div>
 
               <h2 className="text-4xl font-extrabold text-slate-900 dark:text-slate-100 mb-2">Test yakunlandi</h2>
@@ -271,16 +325,16 @@ const QuizSolver: React.FC<QuizSolverProps> = ({ quiz, onComplete }) => {
               <div className="grid grid-cols-2 gap-6 mb-8">
                 <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-2xl p-6">
                   <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mb-2">To'g'ri javoblar</p>
-                  <p className="text-3xl font-bold text-slate-900 dark:text-slate-100">{correctCount} <span className="text-lg text-slate-400">/ {questions.length}</span></p>
+                  <p className="text-3xl font-bold text-slate-900 dark:text-slate-100">{result.correctAnswers} <span className="text-lg text-slate-400">/ {questions.length}</span></p>
                 </div>
-                <div className={`border rounded-2xl p-6 ${passed ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
-                  <p className={`text-sm font-medium mb-2 ${passed ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>Umumiy ball</p>
-                  <p className={`text-4xl font-bold ${passed ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{score}%</p>
+                <div className={`border rounded-2xl p-6 ${result.passed ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
+                  <p className={`text-sm font-medium mb-2 ${result.passed ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>Umumiy ball</p>
+                  <p className={`text-4xl font-bold ${result.passed ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{Math.round(result.scorePercentage)}%</p>
                 </div>
               </div>
 
-              <p className={`text-xl font-bold ${passed ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                {passed ? "Tabriklaymiz, siz testdan o'tdingiz! Natija saqlandi." : "Afsuski, o'tish balini to'play olmadingiz (Min: 70%)."}
+              <p className={`text-xl font-bold ${result.passed ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                {result.passed ? "Tabriklaymiz, siz testdan o'tdingiz! Natija saqlandi." : "Afsuski, o'tish balini to'play olmadingiz."}
               </p>
             </div>
 
@@ -288,7 +342,7 @@ const QuizSolver: React.FC<QuizSolverProps> = ({ quiz, onComplete }) => {
               <div className="flex gap-4 justify-center">
                 <button
                   onClick={() => {
-                    onComplete?.({ correctCount, totalCount: questions.length, score });
+                    onComplete?.({ correctCount: result.correctAnswers, totalCount: questions.length, score: result.scorePercentage });
                     setStatus('INTRO');
                     setSelectedAnswers({});
                   }}
@@ -297,7 +351,7 @@ const QuizSolver: React.FC<QuizSolverProps> = ({ quiz, onComplete }) => {
                   <i className="fas fa-home"></i> Darsga qaytish
                 </button>
 
-                {!passed && (
+                {!result.passed && (
                   <button
                     onClick={() => {
                       setStatus('INTRO');

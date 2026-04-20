@@ -1,25 +1,33 @@
 import apiClient from './apiClient';
 
+export interface TestAnswerRequest {
+  questionId: number;
+  selectedAnswer: string;
+}
+
 export interface TestAttemptRequest {
-  userId: number;
-  lesson: string;
+  quizId: number;
   totalQuestions: number;
-  correctAnswers: number;
-  startedAt: string;
-  submittedAt: string;
+  answers: TestAnswerRequest[];
+}
+
+export interface TestAnswerResponse {
+  questionId: number;
+  selectedAnswer: string;
+  correct: boolean;
 }
 
 export interface TestAttemptResponse {
   id: number;
-  userId: number;
-  lesson: string;           // String — lesson title, matches Swagger
-  lessonId?: number;
+  quizId: number;
+  user?: string;
   totalQuestions: number;
   correctAnswers: number;
   scorePercentage: number;
   passed: boolean;
   startedAt: string;
   submittedAt: string;
+  answers: TestAnswerResponse[];
 }
 
 // Spring Boot LocalDateTime needs "2026-03-12T10:05:30" — no Z, no milliseconds
@@ -27,11 +35,7 @@ const toLocalDateTime = (isoString: string): string => isoString.slice(0, 19);
 
 export const testAttemptService = {
   async submit(data: TestAttemptRequest): Promise<TestAttemptResponse> {
-    const response = await apiClient.post<TestAttemptResponse>('/api/testAttempts', {
-      ...data,
-      startedAt: toLocalDateTime(data.startedAt),
-      submittedAt: toLocalDateTime(data.submittedAt),
-    });
+    const response = await apiClient.post<TestAttemptResponse>('/api/testAttempts', data);
     return response.data;
   },
 

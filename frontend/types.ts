@@ -45,6 +45,8 @@ export interface Quiz {
   name: string;
   questions: Question[];
   subModuleId: string;
+  timeLimitInMinutes?: number | null;
+  passingScore?: number | null;
 }
 
 export interface UserProgress {
