@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import * as XLSX from 'xlsx';
 import { SystemModule, Question } from '../types';
@@ -16,6 +17,7 @@ interface EnrichedAttempt {
   id: number;
   userName: string;
   quizId: number;
+  quizName: string;
   totalQuestions: number;
   correctAnswers: number;
   scorePercentage: number;
@@ -33,6 +35,14 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
 
   useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSelectedAttemptForAnalysis(null);
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, []);
+
+  useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
@@ -48,6 +58,7 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
           id: a.id,
           userName: a.user || userMap[(a as any).userId] || `Foydalanuvchi #${(a as any).userId || a.id}`,
           quizId: a.quizId ?? 0,
+          quizName: (a as any).name || (a as any).lesson || `Test #${a.quizId}`,
           totalQuestions: a.totalQuestions,
           correctAnswers: a.correctAnswers,
           scorePercentage: Math.round(a.scorePercentage),
@@ -97,7 +108,7 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
     if (filteredAttempts.length === 0) return;
     const dataToExport = filteredAttempts.map(a => ({
       'Xodim': a.userName,
-      'Test ID': a.quizId,
+      'Test Nomi': a.quizName,
       'Jami savollar': a.totalQuestions,
       "To'g'ri javoblar": a.correctAnswers,
       'Ball (%)': a.scorePercentage,
@@ -273,7 +284,7 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
               {filteredAttempts.map(a => (
                 <tr key={a.id} className="hover:bg-slate-50/50 transition-colors">
                   <td className="px-6 py-4 font-medium text-slate-900 text-sm">{a.userName}</td>
-                  <td className="px-6 py-4 text-slate-500 text-sm">Test #{a.quizId}</td>
+                  <td className="px-6 py-4 text-slate-500 text-sm">{a.quizName}</td>
                   <td className="px-6 py-4 text-center text-sm text-slate-600">{a.correctAnswers} / {a.totalQuestions}</td>
                   <td className="px-6 py-4 text-center">
                     <span className={`font-bold ${a.scorePercentage >= 80 ? 'text-green-600' : 'text-orange-500'}`}>
@@ -321,86 +332,103 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
       </div>
 
       {/* Analysis Modal */}
-      {selectedAttemptForAnalysis && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
-            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-              <div>
-                <h3 className="font-bold text-slate-900 text-lg flex items-center gap-2">
-                  <i className="fas fa-microscope text-blue-600"></i>
-                  Test Tahlili: {selectedAttemptForAnalysis.userName}
-                </h3>
-                <p className="text-sm text-slate-500 mt-1">Test #{selectedAttemptForAnalysis.quizId} · {selectedAttemptForAnalysis.submittedAt}</p>
+      {selectedAttemptForAnalysis && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-slate-900/70 backdrop-blur-md animate-in fade-in duration-200 p-4 sm:p-8">
+          <div className="bg-slate-50 dark:bg-slate-900 w-full max-w-5xl h-full sm:h-auto sm:max-h-[95vh] sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-slate-200/20 dark:border-slate-700/50">
+            {/* Header: Readonly Proof Style */}
+            <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-white dark:bg-slate-800 shrink-0">
+              <div className="flex items-center gap-4">
+                <div className="hidden sm:flex w-12 h-12 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-xl items-center justify-center text-xl shadow-inner">
+                  <i className="fas fa-file-contract"></i>
+                </div>
+                <div>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-1">
+                    <h3 className="font-bold text-slate-900 dark:text-slate-100 text-lg sm:text-xl">
+                      Test Natijasi
+                    </h3>
+                    <span className="px-2 py-0.5 rounded text-[10px] uppercase tracking-wider font-bold bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-600 w-max">Read-Only</span>
+                  </div>
+                  <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium">Xodim: <span className="text-slate-700 dark:text-slate-300">{selectedAttemptForAnalysis.userName}</span> · {selectedAttemptForAnalysis.quizName} · {selectedAttemptForAnalysis.submittedAt}</p>
+                </div>
               </div>
               <button
                 onClick={() => setSelectedAttemptForAnalysis(null)}
-                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200 text-slate-500 transition-colors"
+                className="w-10 h-10 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 transition-colors shrink-0 ml-2"
               >
-                <i className="fas fa-times"></i>
+                <i className="fas fa-times text-lg"></i>
               </button>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-slate-50/50 dark:bg-slate-900/50 custom-scrollbar relative">
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.03] dark:opacity-[0.02]">
+                <i className="fas fa-certificate text-[30rem]"></i>
+              </div>
               {loadingAnalysis ? (
-                <div className="flex flex-col items-center justify-center py-20">
-                  <i className="fas fa-circle-notch fa-spin text-3xl text-blue-500 mb-4"></i>
-                  <p className="text-slate-500">Savollar yuklanmoqda...</p>
+                <div className="flex flex-col items-center justify-center py-20 relative z-10">
+                  <i className="fas fa-circle-notch fa-spin text-4xl text-blue-500 mb-4 drop-shadow-md"></i>
+                  <p className="text-slate-500 dark:text-slate-400 font-medium">Ma'lumotlar olinmoqda...</p>
                 </div>
               ) : (
-                <div className="space-y-6">
+                <div className="space-y-6 max-w-4xl mx-auto relative z-10">
                   {selectedAttemptForAnalysis.answers.map((ans, idx) => {
                     const question = analysisQuestions.find(q => q.id === ans.questionId.toString());
                     return (
-                      <div key={idx} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
-                        <div className="flex items-start gap-4 mb-4">
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 font-bold text-sm ${ans.correct ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                      <div key={idx} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 sm:p-6 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
+                        <div className={`absolute top-0 left-0 w-1.5 h-full ${ans.correct ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                        <div className="flex items-start gap-4 mb-5">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-bold text-lg shadow-sm ${ans.correct ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800'}`}>
                             {idx + 1}
                           </div>
                           <div>
-                            <p className="font-bold text-slate-900 text-[15px] leading-relaxed">
+                            <p className="font-bold text-slate-900 dark:text-slate-100 text-[15px] sm:text-[16px] leading-relaxed">
                               {question ? question.text : `Savol ID: ${ans.questionId}`}
                             </p>
                           </div>
                         </div>
 
                         {question && (
-                          <div className="ml-12 grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-                            {question.options.map((opt, oIdx) => (
-                              <div key={oIdx} className="flex items-center gap-2 text-sm p-2 rounded-lg border border-slate-100 bg-slate-50">
-                                <span className="w-5 h-5 rounded bg-slate-200 text-slate-600 flex items-center justify-center text-xs font-bold shrink-0">{String.fromCharCode(65 + oIdx)}</span>
-                                <span className="text-slate-700">{opt}</span>
-                              </div>
-                            ))}
+                          <div className="ml-14 grid grid-cols-1 gap-3 mb-2">
+                            {question.options.map((opt, oIdx) => {
+                              const isSelected = ans.selectedAnswer === opt;
+                              let optClass = 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-400';
+                              
+                              if (isSelected) {
+                                if (ans.correct) {
+                                  optClass = 'border-green-400 dark:border-green-600 bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300 ring-1 ring-green-400 dark:ring-green-600';
+                                } else {
+                                  optClass = 'border-red-400 dark:border-red-600 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300 ring-1 ring-red-400 dark:ring-red-600';
+                                }
+                              }
+
+                              return (
+                                <div key={oIdx} className={`flex items-center gap-3 text-sm p-3 rounded-xl border transition-all ${optClass}`}>
+                                  <span className={`w-7 h-7 rounded flex items-center justify-center text-xs font-bold shrink-0 ${isSelected ? (ans.correct ? 'bg-green-500 text-white' : 'bg-red-500 text-white') : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-300'}`}>
+                                    {String.fromCharCode(65 + oIdx)}
+                                  </span>
+                                  <span className="font-medium">{opt}</span>
+                                  {isSelected && (
+                                    <div className="ml-auto flex items-center gap-2">
+                                      <span className={`text-[10px] uppercase font-bold tracking-wider hidden sm:inline ${ans.correct ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>Tanlangan</span>
+                                      <i className={`fas fa-${ans.correct ? 'check-circle' : 'times-circle'} text-xl ${ans.correct ? 'text-green-500' : 'text-red-500'}`}></i>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
-
-                        <div className="ml-12 flex flex-col sm:flex-row sm:items-center gap-4 p-4 rounded-xl bg-slate-50 border border-slate-100">
-                          <div className="flex-1">
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Xodim javobi</p>
-                            <div className="flex items-center gap-2">
-                              <i className={`fas fa-${ans.correct ? 'check-circle text-green-500' : 'times-circle text-red-500'}`}></i>
-                              <p className={`font-semibold text-sm ${ans.correct ? 'text-green-700' : 'text-red-700'}`}>
-                                {ans.selectedAnswer || 'Belgilanmagan'}
+                        {!question && (
+                           <div className="ml-14">
+                              <p className={`font-semibold text-sm ${ans.correct ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                Tanlangan javob: {ans.selectedAnswer || 'Belgilanmagan'}
                               </p>
-                            </div>
-                          </div>
-                          {!ans.correct && question && question.correctAnswer !== undefined && (
-                            <div className="flex-1 sm:border-l border-slate-200 sm:pl-4 pt-3 sm:pt-0 border-t sm:border-t-0">
-                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">To'g'ri javob</p>
-                              <div className="flex items-center gap-2">
-                                <i className="fas fa-check-circle text-green-500"></i>
-                                <p className="font-semibold text-sm text-green-700">
-                                  {question.options[question.correctAnswer]}
-                                </p>
-                              </div>
-                            </div>
-                          )}
-                        </div>
+                           </div>
+                        )}
                       </div>
                     );
                   })}
                   {selectedAttemptForAnalysis.answers.length === 0 && (
-                    <div className="text-center py-10 text-slate-500">
+                    <div className="text-center py-10 bg-slate-100 dark:bg-slate-800 rounded-2xl text-slate-500 dark:text-slate-400 border border-dashed border-slate-300 dark:border-slate-700">
                       Ushbu test urinishida javoblar mavjud emas.
                     </div>
                   )}
@@ -408,16 +436,17 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
               )}
             </div>
             
-            <div className="p-4 border-t border-slate-100 flex justify-end bg-white">
+            <div className="p-4 sm:p-5 border-t border-slate-200 dark:border-slate-800 flex justify-end bg-white dark:bg-slate-800 shrink-0">
               <button
                 onClick={() => setSelectedAttemptForAnalysis(null)}
-                className="px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold transition-colors"
+                className="px-8 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-md w-full sm:w-auto"
               >
                 Yopish
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

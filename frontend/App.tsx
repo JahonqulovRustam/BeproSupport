@@ -38,6 +38,7 @@ const App: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [sessionChecked, setSessionChecked] = useState(false);
+  const [modulesLoaded, setModulesLoaded] = useState(false);
   const [users, setUsers] = useState<User[]>(INITIAL_USERS);
   const [modules, setModules] = useState<SystemModule[]>([]);
   const [activeModuleId, setActiveModuleId] = useState('');
@@ -49,7 +50,7 @@ const App: React.FC = () => {
     const validateSession = async () => {
       const token = localStorage.getItem('bepro_jwt');
       const saved = localStorage.getItem('bepro_user');
-      if (!token || !saved) { clearSession(); setSessionChecked(true); return; }
+      if (!token || !saved) { clearSession(); setSessionChecked(true); setModulesLoaded(true); return; }
       try {
         await userService.getAllUsers();
         const user: User = JSON.parse(saved);
@@ -82,7 +83,10 @@ const App: React.FC = () => {
   useEffect(() => {
     const fetchModules = async () => {
       const token = localStorage.getItem('bepro_jwt');
-      if (!token || !currentUser) return;
+      if (!token || !currentUser) {
+        setModulesLoaded(true);
+        return;
+      }
       try {
         const fetched = await moduleService.getAllModules();
         if (fetched.length > 0) {
@@ -90,6 +94,9 @@ const App: React.FC = () => {
           setActiveModuleId(prev => prev || fetched[0].id);
         }
       } catch (err) { console.error('Modullarni yuklashda xatolik:', err); }
+      finally {
+        setModulesLoaded(true);
+      }
     };
     fetchModules();
   }, [currentUser]);
@@ -123,6 +130,7 @@ const App: React.FC = () => {
     setModules([]);
     setActiveModuleId('');
     setView('CONTENT');
+    setModulesLoaded(false);
   };
 
   // ─── User management ─────────────────────────────────────────────────────────
@@ -164,7 +172,7 @@ const App: React.FC = () => {
   };
 
   // ─── Loading screen ───────────────────────────────────────────────────────────
-  if (!sessionChecked) {
+  if (!sessionChecked || !modulesLoaded) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center">
         <div className="text-center space-y-4">

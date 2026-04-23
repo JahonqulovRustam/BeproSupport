@@ -73,7 +73,8 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
   const [quizTimeLimitInMinutes, setQuizTimeLimitInMinutes] = useState<number>(30);
   const [quizHasPassingScore, setQuizHasPassingScore] = useState(false);
   const [quizPassingScore, setQuizPassingScore] = useState<number>(85);
-  const [editingQuizQuestionIndex, setEditingQuizQuestionIndex] = useState<number | null>(null);
+  const [editingQuizQuestionIndex, setEditingQuizQuestionIndex] = useState<number | 'new' | null>(null);
+  const [editingQuizId, setEditingQuizId] = useState<number | string | null>(null);
 
   const [lessonTab, setLessonTab] = useState<'BASIC' | 'MEDIA'>('BASIC');
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
@@ -217,6 +218,7 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
     setQuizHasPassingScore(false);
     setQuizPassingScore(85);
     setEditingQuizQuestionIndex(null);
+    setEditingQuizId(null);
     setExternalUrl('');
     setExternalType('VIDEO');
     setEditingLessonId(null);
@@ -341,24 +343,31 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
   const handleAddQuiz = async () => {
     if (!quizTitle.trim()) { alert('Quiz nomini kiriting'); return; }
     if (!lessonSubModuleId) { alert('Sub-module tanlanishi shart'); return; }
-    if (quizQuestions.length === 0) { alert('Kamida bitta savol qo\'shilishi shart'); return; }
 
     try {
-      // Prepare questions in the format the API expects
-      const questionRequests = quizQuestions.map(q => ({
-        text: q.text,
-        options: q.options,
-        correctAns: q.options[q.correctAnswer],
-      }));
+      if (editingQuizId) {
+        await quizService.updateQuiz(
+          editingQuizId,
+          quizTitle.trim(),
+          quizHasTimeLimit ? quizTimeLimitInMinutes : null,
+          quizHasPassingScore ? quizPassingScore : null
+        );
+      } else {
+        if (quizQuestions.length === 0) { alert('Kamida bitta savol qo\'shilishi shart'); return; }
+        const questionRequests = quizQuestions.map(q => ({
+          text: q.text,
+          options: q.options,
+          correctAns: q.options[q.correctAnswer],
+        }));
 
-      // Create quiz with questions
-      await quizService.createQuizWithQuestions(
-        quizTitle.trim(),
-        parseInt(String(lessonSubModuleId)),
-        questionRequests,
-        quizHasTimeLimit ? quizTimeLimitInMinutes : null,
-        quizHasPassingScore ? quizPassingScore : null
-      );
+        await quizService.createQuizWithQuestions(
+          quizTitle.trim(),
+          parseInt(String(lessonSubModuleId)),
+          questionRequests,
+          quizHasTimeLimit ? quizTimeLimitInMinutes : null,
+          quizHasPassingScore ? quizPassingScore : null
+        );
+      }
 
       const updatedModule = await moduleService.getModuleById(module.id);
       onUpdateModule(updatedModule);
@@ -367,8 +376,8 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
       setAddMode('LESSON');
       setQuizQuestions([]);
     } catch (err) {
-      console.error('Quiz yaratishda xatolik', err);
-      alert('Quiz yaratishda xatolik yuz berdi');
+      console.error('Quiz saqlashda xatolik', err);
+      alert('Quiz saqlashda xatolik yuz berdi');
     }
   };
 
@@ -435,7 +444,7 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
       return;
     }
 
-    if (editingQuizQuestionIndex !== null) {
+    if (typeof editingQuizQuestionIndex === 'number') {
       setQuizQuestions(prev => {
         const next = [...prev];
         next[editingQuizQuestionIndex] = {
@@ -818,133 +827,274 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
                   </div>
 
                   {quizTab === 'BASIC' && (
-                    <div className="space-y-5 animate-fadeIn">
-                      <div className="space-y-2">
-                        <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Quiz nomi *</label>
-                        <input type="text" className={inputCls} placeholder="Quiz sarlavhasi" value={quizTitle} onChange={e => setQuizTitle(e.target.value)} />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Quiz tavsifi</label>
-                        <textarea className={inputCls} value={quizDescription} onChange={e => setQuizDescription(e.target.value)} rows={3} placeholder="Quiz tavsifi" />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Sub-module</label>
-                        <div className={`${inputCls} bg-slate-100 dark:bg-slate-800/80 cursor-not-allowed opacity-80 flex items-center gap-2`}>
-                          <i className="fas fa-layer-group text-slate-400"></i>
-                          {module.subModules?.find(sm => String(sm.id) === String(lessonSubModuleId))?.name || 'Tanlanmagan'}
+                    <div className="space-y-6 animate-fadeIn">
+                      <div className="grid grid-cols-1 gap-6">
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Quiz nomi *</label>
+                          <input type="text" className={inputCls} placeholder="Quiz sarlavhasi" value={quizTitle} onChange={e => setQuizTitle(e.target.value)} />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Sub-module</label>
+                          <div className={`${inputCls} bg-slate-100 dark:bg-slate-800/80 cursor-not-allowed opacity-80 flex items-center gap-2`}>
+                            <i className="fas fa-layer-group text-slate-400"></i>
+                            {module.subModules?.find(sm => String(sm.id) === String(lessonSubModuleId))?.name || 'Tanlanmagan'}
+                          </div>
                         </div>
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-                          <label className="flex items-center gap-3 cursor-pointer">
-                            <input type="checkbox" checked={quizHasTimeLimit} onChange={e => setQuizHasTimeLimit(e.target.checked)} className="w-5 h-5 rounded text-orange-600 focus:ring-orange-500" />
-                            <div className="flex flex-col">
-                              <span className="font-bold text-slate-700 dark:text-slate-300 text-sm">Vaqt chegarasi (Time Limit)</span>
-                              <span className="text-xs text-slate-500 dark:text-slate-400">Quiz uchun vaqt belgilash</span>
-                            </div>
-                          </label>
-                          {quizHasTimeLimit && (
-                            <div className="mt-3 pl-8 flex items-center gap-2">
-                              <input type="number" min="1" className={`${inputCls} !py-1.5 !w-24 text-center`} value={quizTimeLimitInMinutes} onChange={e => setQuizTimeLimitInMinutes(Number(e.target.value))} />
-                              <span className="text-sm font-bold text-slate-600">daqiqa</span>
-                            </div>
-                          )}
-                        </div>
 
-                        <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-                          <label className="flex items-center gap-3 cursor-pointer">
-                            <input type="checkbox" checked={quizHasPassingScore} onChange={e => setQuizHasPassingScore(e.target.checked)} className="w-5 h-5 rounded text-orange-600 focus:ring-orange-500" />
-                            <div className="flex flex-col">
-                              <span className="font-bold text-slate-700 dark:text-slate-300 text-sm">O'tish balli (Passing Score)</span>
-                              <span className="text-xs text-slate-500 dark:text-slate-400">O'tish uchun foizni belgilang</span>
+                      <div className="pt-2">
+                        <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-4">Quiz sozlamalari</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {/* Time Limit Block */}
+                          <div className={`relative overflow-hidden rounded-2xl border-2 transition-all duration-300 ${quizHasTimeLimit ? 'border-orange-500 bg-orange-50/30 dark:bg-orange-900/10 shadow-md shadow-orange-500/10' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 hover:border-orange-300 dark:hover:border-slate-600'}`}>
+                            {quizHasTimeLimit && <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-orange-500/20 to-transparent rounded-bl-full pointer-events-none"></div>}
+                            <div className="p-5">
+                              <label className="flex items-start gap-4 cursor-pointer w-full">
+                                <div className="mt-1 relative flex items-center justify-center">
+                                  <input type="checkbox" checked={quizHasTimeLimit} onChange={e => setQuizHasTimeLimit(e.target.checked)} className="peer sr-only" />
+                                  <div className="w-5 h-5 border-2 rounded transition-all duration-200 peer-checked:bg-orange-600 peer-checked:border-orange-600 border-slate-300 dark:border-slate-600"></div>
+                                  <i className="fas fa-check absolute text-white text-[10px] opacity-0 peer-checked:opacity-100 transition-opacity duration-200"></i>
+                                </div>
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${quizHasTimeLimit ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400' : 'bg-slate-100 text-slate-400 dark:bg-slate-700 dark:text-slate-500'}`}>
+                                      <i className="fas fa-stopwatch text-sm"></i>
+                                    </div>
+                                    <span className={`font-bold text-sm transition-colors ${quizHasTimeLimit ? 'text-orange-900 dark:text-orange-100' : 'text-slate-700 dark:text-slate-300'}`}>
+                                      Vaqt chegarasi
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
+                                    Foydalanuvchi quizni ishlash uchun belgilangan vaqtga ega bo'ladi.
+                                  </p>
+                                </div>
+                              </label>
+                              
+                              <div className={`mt-4 pl-[3.25rem] transition-all duration-300 overflow-hidden ${quizHasTimeLimit ? 'max-h-20 opacity-100' : 'max-h-0 opacity-0'}`}>
+                                <div className="flex items-center gap-3">
+                                  <div className="relative w-24">
+                                    <input type="number" min="1" className={`w-full px-3 py-2 bg-white dark:bg-slate-900 border border-orange-200 dark:border-orange-800/50 rounded-xl focus:ring-2 focus:ring-orange-500/20 outline-none text-slate-900 dark:text-slate-100 font-bold text-center shadow-sm`} value={quizTimeLimitInMinutes} onChange={e => setQuizTimeLimitInMinutes(Number(e.target.value))} />
+                                  </div>
+                                  <span className="text-sm font-bold text-slate-600 dark:text-slate-400">daqiqa</span>
+                                </div>
+                              </div>
                             </div>
-                          </label>
-                          {quizHasPassingScore && (
-                            <div className="mt-3 pl-8 flex items-center gap-2">
-                              <input type="number" min="1" max="100" className={`${inputCls} !py-1.5 !w-24 text-center`} value={quizPassingScore} onChange={e => setQuizPassingScore(Number(e.target.value))} />
-                              <span className="text-sm font-bold text-slate-600">%</span>
+                          </div>
+
+                          {/* Passing Score Block */}
+                          <div className={`relative overflow-hidden rounded-2xl border-2 transition-all duration-300 ${quizHasPassingScore ? 'border-green-500 bg-green-50/30 dark:bg-green-900/10 shadow-md shadow-green-500/10' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 hover:border-green-300 dark:hover:border-slate-600'}`}>
+                            {quizHasPassingScore && <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-green-500/20 to-transparent rounded-bl-full pointer-events-none"></div>}
+                            <div className="p-5">
+                              <label className="flex items-start gap-4 cursor-pointer w-full">
+                                <div className="mt-1 relative flex items-center justify-center">
+                                  <input type="checkbox" checked={quizHasPassingScore} onChange={e => setQuizHasPassingScore(e.target.checked)} className="peer sr-only" />
+                                  <div className="w-5 h-5 border-2 rounded transition-all duration-200 peer-checked:bg-green-600 peer-checked:border-green-600 border-slate-300 dark:border-slate-600"></div>
+                                  <i className="fas fa-check absolute text-white text-[10px] opacity-0 peer-checked:opacity-100 transition-opacity duration-200"></i>
+                                </div>
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${quizHasPassingScore ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400' : 'bg-slate-100 text-slate-400 dark:bg-slate-700 dark:text-slate-500'}`}>
+                                      <i className="fas fa-award text-sm"></i>
+                                    </div>
+                                    <span className={`font-bold text-sm transition-colors ${quizHasPassingScore ? 'text-green-900 dark:text-green-100' : 'text-slate-700 dark:text-slate-300'}`}>
+                                      O'tish balli
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
+                                    Quizdan muvaffaqiyatli o'tish uchun talab qilinadigan minimal foiz.
+                                  </p>
+                                </div>
+                              </label>
+                              
+                              <div className={`mt-4 pl-[3.25rem] transition-all duration-300 overflow-hidden ${quizHasPassingScore ? 'max-h-20 opacity-100' : 'max-h-0 opacity-0'}`}>
+                                <div className="flex items-center gap-3">
+                                  <div className="relative w-24">
+                                    <input type="number" min="1" max="100" className={`w-full px-3 py-2 bg-white dark:bg-slate-900 border border-green-200 dark:border-green-800/50 rounded-xl focus:ring-2 focus:ring-green-500/20 outline-none text-slate-900 dark:text-slate-100 font-bold text-center shadow-sm`} value={quizPassingScore} onChange={e => setQuizPassingScore(Number(e.target.value))} />
+                                  </div>
+                                  <span className="text-sm font-bold text-slate-600 dark:text-slate-400">%</span>
+                                </div>
+                              </div>
                             </div>
-                          )}
+                          </div>
+
                         </div>
                       </div>
                     </div>
                   )}
 
                   {quizTab === 'QUESTIONS' && (
-                    <div className="space-y-5 animate-fadeIn">
-                      <div className="border border-slate-200 dark:border-slate-700 p-5 rounded-2xl space-y-4 bg-slate-50/50 dark:bg-slate-800/50">
-                        <div className="flex justify-between items-center mb-2">
-                          <h4 className="font-bold text-slate-800 dark:text-slate-200">
-                            {editingQuizQuestionIndex !== null ? 'Savolni tahrirlash' : 'Yangi savol qo\'shish'}
-                          </h4>
-                          {editingQuizQuestionIndex !== null && (
-                            <button onClick={() => {
-                              setEditingQuizQuestionIndex(null);
-                              setQuizCurrentQuestion({ text: '', options: ['', '', '', ''], correctAnswer: 0 });
-                            }} className="text-xs font-bold text-slate-500 hover:text-slate-700">
-                              Bekor qilish
-                            </button>
-                          )}
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Savol matni</label>
-                          <input className={inputCls} value={quizCurrentQuestion.text} onChange={e => setQuizCurrentQuestion(prev => ({ ...prev, text: e.target.value }))} placeholder="Savol matnini kiriting..." />
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          {(quizCurrentQuestion.options || []).map((opt, idx) => (
-                            <input key={idx} className={inputCls} value={opt} onChange={e => {
-                              const next = [...(quizCurrentQuestion.options || [])]; next[idx] = e.target.value;
-                              setQuizCurrentQuestion(prev => ({ ...prev, options: next }));
-                            }} placeholder={`Variant ${String.fromCharCode(65 + idx)}`} />
-                          ))}
-                        </div>
-                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2">
-                          <div className="flex items-center gap-3 w-full sm:w-auto">
-                            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">To'g'ri javob:</span>
-                            <select className={`${inputCls} !w-auto !py-2`} value={quizCurrentQuestion.correctAnswer} onChange={e => setQuizCurrentQuestion(prev => ({ ...prev, correctAnswer: Number(e.target.value) }))}>
-                              {(quizCurrentQuestion.options || []).map((_, idx) => (<option key={idx} value={idx}>Variant {String.fromCharCode(65 + idx)}</option>))}
-                            </select>
+                    <div className="space-y-4 animate-fadeIn">
+                      {editingQuizId ? (
+                        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl p-6 text-center">
+                          <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <i className="fas fa-list-check text-2xl"></i>
                           </div>
-                          <button onClick={handleAddQuizQuestion} className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-sm font-bold shadow-md shadow-orange-500/20 transition-colors w-full sm:w-auto flex items-center justify-center gap-2">
-                            <i className={editingQuizQuestionIndex !== null ? "fas fa-check" : "fas fa-plus"}></i> 
-                            {editingQuizQuestionIndex !== null ? "Saqlash" : "Qo'shish"}
+                          <h4 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-2">Savollarni tahrirlash</h4>
+                          <p className="text-slate-600 dark:text-slate-400 text-sm mb-6 max-w-md mx-auto">
+                            Ushbu quiz allaqachon yaratilgan. Savollarni tahrirlash uchun quyidagi tugmani bosing. O'zgarishlar darhol saqlanadi.
+                          </p>
+                          <button
+                            onClick={(e) => {
+                               e.preventDefault();
+                               const activeSub = subModules.find(sm => String(sm.id) === String(lessonSubModuleId));
+                               if (activeSub && activeSub.quizResponse) {
+                                 setManagingQuiz({ quiz: activeSub.quizResponse, subModuleId: activeSub.id });
+                               }
+                            }}
+                            className="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2 mx-auto"
+                          >
+                            <i className="fas fa-external-link-alt"></i> Savollarni ochish
                           </button>
                         </div>
-                      </div>
-                      
-                      {quizQuestions.length > 0 && (
-                        <div className="bg-slate-50 dark:bg-slate-800/80 p-4 rounded-2xl border border-slate-200 dark:border-slate-700">
-                          <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">Qo'shilgan savollar ({quizQuestions.length})</p>
-                          <div className="space-y-3">
-                            {quizQuestions.map((q, idx) => (
-                              <div key={idx} className={`p-4 rounded-xl border flex gap-4 ${editingQuizQuestionIndex === idx ? 'bg-orange-50 border-orange-200' : 'bg-white border-slate-200'}`}>
-                                <div className="w-8 h-8 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center font-bold text-sm shrink-0">
-                                  {idx + 1}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="font-bold text-slate-800 text-sm truncate">{q.text}</p>
-                                  <div className="mt-2 grid grid-cols-2 gap-2">
-                                    {q.options.map((opt, optIdx) => (
-                                      <div key={optIdx} className={`text-xs p-1.5 rounded flex items-center gap-2 overflow-hidden ${optIdx === q.correctAnswer ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-slate-50 text-slate-600 border border-slate-100'}`}>
-                                        <span className="font-bold shrink-0">{String.fromCharCode(65 + optIdx)}</span>
-                                        <span className="truncate">{opt}</span>
-                                        {optIdx === q.correctAnswer && <i className="fas fa-check-circle ml-auto shrink-0"></i>}
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                                <div className="flex flex-col gap-2 shrink-0">
-                                  <button onClick={() => handleEditQuizQuestion(idx)} className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 flex items-center justify-center transition-colors">
-                                    <i className="fas fa-pen text-xs"></i>
-                                  </button>
-                                  <button onClick={() => handleDeleteQuizQuestionLocally(idx)} className="w-8 h-8 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 flex items-center justify-center transition-colors">
-                                    <i className="fas fa-trash text-xs"></i>
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
+                      ) : (
+                        <>
+                          <div className="flex justify-between items-center pb-2">
+                            <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm">Savollar jadvali ({quizQuestions.length})</h4>
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                setEditingQuizQuestionIndex('new');
+                                setQuizCurrentQuestion({ text: '', options: ['', '', '', ''], correctAnswer: 0 });
+                              }}
+                              className="px-4 py-2 bg-orange-600 text-white text-sm font-bold rounded-xl hover:bg-orange-700 shadow-lg shadow-orange-500/30 transition-all flex items-center gap-2"
+                            >
+                              <i className="fas fa-plus"></i> Yangi savol
+                            </button>
                           </div>
-                        </div>
+
+                          <div className="flex-1 overflow-y-auto custom-scrollbar border border-slate-200 dark:border-slate-700 rounded-2xl bg-slate-50 dark:bg-slate-900/30 relative">
+                            <table className="w-full text-left text-sm whitespace-nowrap">
+                              <thead className="bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-semibold text-xs uppercase tracking-wider sticky top-0 z-10 shadow-sm border-b border-slate-200 dark:border-slate-700">
+                                <tr>
+                                  <th className="px-4 py-4 w-12 text-center">#</th>
+                                  <th className="px-4 py-4 min-w-[250px] w-1/2">Savol matni</th>
+                                  <th className="px-4 py-4 min-w-[250px] w-1/2">Variantlar</th>
+                                  <th className="px-4 py-4 w-28 text-center">Amallar</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                                {/* New question form */}
+                                {editingQuizQuestionIndex === 'new' && (
+                                  <tr className="bg-orange-50/50 dark:bg-orange-900/10 relative z-0">
+                                    <td className="px-4 py-4 text-center text-orange-600 font-bold">*</td>
+                                    <td className="px-4 py-4 whitespace-normal align-top">
+                                      <textarea rows={4} placeholder="Savolni kiriting..." className="w-full text-sm px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition-shadow text-slate-900 dark:text-slate-100" value={quizCurrentQuestion.text} onChange={e => setQuizCurrentQuestion(p => ({ ...p, text: e.target.value }))} />
+                                    </td>
+                                    <td className="px-4 py-4 whitespace-normal align-top">
+                                      <div className="grid grid-cols-1 gap-2 w-full">
+                                        {(quizCurrentQuestion.options || ['', '', '', '']).map((opt, oIdx) => (
+                                          <div key={oIdx} className="flex items-center gap-2">
+                                            <input type="radio" name="new-question-correct" checked={quizCurrentQuestion.correctAnswer === oIdx} onChange={() => setQuizCurrentQuestion(p => ({ ...p, correctAnswer: oIdx }))} className="accent-orange-600 w-4 h-4 cursor-pointer shrink-0" title="To'g'ri javobni belgilash" />
+                                            <input type="text" placeholder={`Variant ${String.fromCharCode(65 + oIdx)}`} className={`flex-1 text-sm px-3 py-2 rounded-xl border ${quizCurrentQuestion.correctAnswer === oIdx ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20 text-orange-900 dark:text-orange-100 font-medium' : 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100'} outline-none focus:border-orange-500 transition-colors`} value={opt} onChange={e => {
+                                              const newOpts = [...(quizCurrentQuestion.options || ['', '', '', ''])];
+                                              newOpts[oIdx] = e.target.value;
+                                              setQuizCurrentQuestion(p => ({ ...p, options: newOpts }));
+                                            }} />
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-4 align-top">
+                                      <div className="flex gap-2 justify-center">
+                                        <button onClick={(e) => { e.preventDefault(); handleAddQuizQuestion(); }} className="w-9 h-9 rounded-xl bg-green-500 hover:bg-green-600 text-white flex items-center justify-center shadow-md transition-all" title="Qo'shish">
+                                          <i className="fas fa-check"></i>
+                                        </button>
+                                        <button onClick={(e) => { e.preventDefault(); setEditingQuizQuestionIndex(null); setQuizCurrentQuestion({ text: '', options: ['', '', '', ''], correctAnswer: 0 }); }} className="w-9 h-9 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 flex items-center justify-center shadow-sm transition-all" title="Bekor qilish">
+                                          <i className="fas fa-times"></i>
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+
+                                {/* Existing questions */}
+                                {quizQuestions.length > 0 ? quizQuestions.map((q, qIdx) => {
+                                  if (editingQuizQuestionIndex === qIdx) {
+                                    return (
+                                      <tr key={qIdx} className="bg-orange-50/50 dark:bg-orange-900/10 relative z-0">
+                                        <td className="px-4 py-4 text-center text-orange-600 font-bold">✎</td>
+                                        <td className="px-4 py-4 whitespace-normal align-top">
+                                          <textarea rows={4} placeholder="Savolni kiriting..." className="w-full text-sm px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition-shadow text-slate-900 dark:text-slate-100" value={quizCurrentQuestion.text} onChange={e => setQuizCurrentQuestion(p => ({ ...p, text: e.target.value }))} />
+                                        </td>
+                                        <td className="px-4 py-4 whitespace-normal align-top">
+                                          <div className="grid grid-cols-1 gap-2 w-full">
+                                            {(quizCurrentQuestion.options || ['', '', '', '']).map((opt, oIdx) => (
+                                              <div key={oIdx} className="flex items-center gap-2">
+                                                <input type="radio" name={`edit-question-correct-${qIdx}`} checked={quizCurrentQuestion.correctAnswer === oIdx} onChange={() => setQuizCurrentQuestion(p => ({ ...p, correctAnswer: oIdx }))} className="accent-orange-600 w-4 h-4 cursor-pointer shrink-0" title="To'g'ri javobni belgilash" />
+                                                <input type="text" placeholder={`Variant ${String.fromCharCode(65 + oIdx)}`} className={`flex-1 text-sm px-3 py-2 rounded-xl border ${quizCurrentQuestion.correctAnswer === oIdx ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20 text-orange-900 dark:text-orange-100 font-medium' : 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100'} outline-none focus:border-orange-500 transition-colors`} value={opt} onChange={e => {
+                                                  const newOpts = [...(quizCurrentQuestion.options || ['', '', '', ''])];
+                                                  newOpts[oIdx] = e.target.value;
+                                                  setQuizCurrentQuestion(p => ({ ...p, options: newOpts }));
+                                                }} />
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </td>
+                                        <td className="px-4 py-4 align-top">
+                                          <div className="flex gap-2 justify-center">
+                                            <button onClick={(e) => { e.preventDefault(); handleAddQuizQuestion(); }} className="w-9 h-9 rounded-xl bg-green-500 hover:bg-green-600 text-white flex items-center justify-center shadow-md transition-all" title="Saqlash">
+                                              <i className="fas fa-check"></i>
+                                            </button>
+                                            <button onClick={(e) => { e.preventDefault(); setEditingQuizQuestionIndex(null); setQuizCurrentQuestion({ text: '', options: ['', '', '', ''], correctAnswer: 0 }); }} className="w-9 h-9 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 flex items-center justify-center shadow-sm transition-all" title="Bekor qilish">
+                                              <i className="fas fa-times"></i>
+                                            </button>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  }
+
+                                  return (
+                                    <tr key={qIdx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                      <td className="px-4 py-4 text-center text-slate-500 font-bold align-top">{qIdx + 1}</td>
+                                      <td className="px-4 py-4 text-slate-800 dark:text-slate-200 whitespace-normal align-top leading-relaxed text-sm font-medium">
+                                        {q.text}
+                                      </td>
+                                      <td className="px-4 py-4 whitespace-normal align-top">
+                                        <ul className="text-sm space-y-1.5 w-full">
+                                          {q.options.map((opt, oIdx) => {
+                                            const isCorrect = oIdx === q.correctAnswer;
+                                            return (
+                                              <li key={oIdx} className={`px-3 py-2 rounded-xl border ${isCorrect ? 'bg-green-50 border-green-200 text-green-700 dark:bg-green-900/20 dark:border-green-800 dark:text-green-400 font-bold shadow-sm' : 'border-transparent text-slate-600 dark:text-slate-400'}`}>
+                                                <span className="w-5 inline-block font-bold opacity-70">{String.fromCharCode(65 + oIdx)}.</span> {opt}
+                                              </li>
+                                            );
+                                          })}
+                                        </ul>
+                                      </td>
+                                      <td className="px-4 py-4 align-top">
+                                        <div className="flex gap-2 justify-center">
+                                          <button 
+                                            onClick={(e) => { e.preventDefault(); handleEditQuizQuestion(qIdx); }}
+                                            className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-orange-600 hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-all flex items-center justify-center"
+                                            title="Tahrirlash"
+                                          >
+                                            <i className="fas fa-edit"></i>
+                                          </button>
+                                          <button 
+                                            onClick={() => handleDeleteQuizQuestionLocally(qIdx)}
+                                            className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 transition-all flex items-center justify-center"
+                                            title="O'chirish"
+                                          >
+                                            <i className="fas fa-trash"></i>
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                }) : (
+                                  editingQuizQuestionIndex !== 'new' && (
+                                    <tr>
+                                      <td colSpan={4} className="px-4 py-8 text-center text-slate-500 dark:text-slate-400">
+                                        Hali savollar qo'shilmagan
+                                      </td>
+                                    </tr>
+                                  )
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
                       )}
                     </div>
                   )}
@@ -1260,18 +1410,20 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
                             >
                               <i className="fas fa-plus"></i> Dars
                             </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setLessonSubModuleId(subModule.id);
-                                setIsAddPanelOpen(true);
-                                setAddMode('QUIZ');
-                              }}
-                              className="px-3 h-8 rounded-full bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors inline-flex items-center justify-center shadow-sm border border-amber-200 dark:border-amber-800/50 text-xs font-bold gap-1.5 opacity-0 group-hover:opacity-100"
-                              title="Quiz qo'shish"
-                            >
-                              <i className="fas fa-plus"></i> Quiz
-                            </button>
+                            {!subModule.quizResponse && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setLessonSubModuleId(subModule.id);
+                                  setIsAddPanelOpen(true);
+                                  setAddMode('QUIZ');
+                                }}
+                                className="px-3 h-8 rounded-full bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors inline-flex items-center justify-center shadow-sm border border-amber-200 dark:border-amber-800/50 text-xs font-bold gap-1.5 opacity-0 group-hover:opacity-100"
+                                title="Quiz qo'shish"
+                              >
+                                <i className="fas fa-plus"></i> Quiz
+                              </button>
+                            )}
                             <div className="w-px h-8 bg-slate-200 dark:bg-slate-700 opacity-0 group-hover:opacity-100 mx-1"></div>
                             <button
                               onClick={(e) => {
@@ -1359,18 +1511,13 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
                                         <button
                                           onClick={(e) => {
                                             e.stopPropagation();
-                                            setManagingQuiz({ quiz: subModule.quizResponse, subModuleId: subModule.id });
-                                          }}
-                                          className="px-3 h-8 rounded-full bg-white dark:bg-slate-800 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors inline-flex items-center justify-center text-xs font-bold border border-amber-200 dark:border-amber-700/50 shadow-sm"
-                                          title="Savollarni Boshqarish"
-                                        >
-                                          <i className="fas fa-cog mr-1.5"></i> Savollar
-                                        </button>
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
                                             setQuizTitle(subModule.quizResponse.name);
                                             setQuizQuestions(subModule.quizResponse.questions || []);
+                                            setQuizHasTimeLimit(subModule.quizResponse.timeLimitInMinutes !== null);
+                                            setQuizTimeLimitInMinutes(subModule.quizResponse.timeLimitInMinutes || 30);
+                                            setQuizHasPassingScore(subModule.quizResponse.passingScore !== null);
+                                            setQuizPassingScore(subModule.quizResponse.passingScore || 85);
+                                            setEditingQuizId(subModule.quizResponse.id);
                                             setAddMode('QUIZ');
                                             setLessonSubModuleId(subModule.id);
                                             setIsAddPanelOpen(true);

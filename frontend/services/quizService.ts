@@ -120,6 +120,25 @@ export const quizService = {
   },
 
   /**
+   * Update quiz basic settings
+   * PUT /api/quiz/{id}
+   */
+  async updateQuiz(
+    id: number | string,
+    name: string,
+    timeLimitInMinutes: number | null,
+    passingScore: number | null
+  ): Promise<Quiz> {
+    const payload = {
+      name,
+      timeLimitInMinutes,
+      passingScore,
+    };
+    const response = await apiClient.put<QuizResponse>(`/api/quiz/${id}`, payload);
+    return mapQuiz(response.data);
+  },
+
+  /**
    * Create a question for a quiz/sub-module
    * POST /api/quiz/{quiz_id}/questions
    */

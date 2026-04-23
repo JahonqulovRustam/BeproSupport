@@ -21,13 +21,18 @@ const QuizSolver: React.FC<QuizSolverProps> = ({ quiz, onComplete }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [result, setResult] = useState<TestAttemptResponse | null>(null);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [fullQuizData, setFullQuizData] = useState<Quiz | null>(null);
 
   useEffect(() => {
     const loadQuestions = async () => {
       try {
         setIsLoading(true);
-        const fetchedQuestions = await quizService.getQuizQuestions(quiz.id);
+        const [fetchedQuestions, fetchedQuizData] = await Promise.all([
+          quizService.getQuizQuestions(quiz.id),
+          quizService.getQuizById(Number(quiz.id)).catch(() => null)
+        ]);
         setQuestions(fetchedQuestions);
+        setFullQuizData(fetchedQuizData);
         setError(null);
       } catch (err) {
         console.error('Failed to load quiz questions:', err);
@@ -44,8 +49,9 @@ const QuizSolver: React.FC<QuizSolverProps> = ({ quiz, onComplete }) => {
     setStatus('IN_PROGRESS');
     setCurrentIndex(0);
     setSelectedAnswers({});
-    if (quiz.timeLimitInMinutes) {
-      setTimeLeft(quiz.timeLimitInMinutes * 60);
+    const activeTimeLimit = fullQuizData?.timeLimitInMinutes ?? quiz.timeLimitInMinutes;
+    if (activeTimeLimit) {
+      setTimeLeft(activeTimeLimit * 60);
     } else {
       setTimeLeft(null);
     }
@@ -146,6 +152,9 @@ const QuizSolver: React.FC<QuizSolverProps> = ({ quiz, onComplete }) => {
 
   // ─── Render Intro (Normal inline layout) ───────────────────────────────────
   if (status === 'INTRO') {
+    const activePassingScore = fullQuizData?.passingScore ?? quiz.passingScore ?? 85;
+    const activeTimeLimit = fullQuizData?.timeLimitInMinutes ?? quiz.timeLimitInMinutes;
+    
     return (
       <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm overflow-hidden p-10 animate-fadeIn border border-slate-200 dark:border-slate-700">
         <div className="flex items-center justify-center w-16 h-16 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-2xl mb-6 mx-auto">
@@ -153,7 +162,7 @@ const QuizSolver: React.FC<QuizSolverProps> = ({ quiz, onComplete }) => {
         </div>
         
         <h2 className="text-3xl font-extrabold text-slate-900 dark:text-slate-100 text-center mb-4">
-          {quiz.name}
+          {fullQuizData?.name || quiz.name}
         </h2>
         <p className="text-slate-500 dark:text-slate-400 text-center mb-8 text-lg">
           Yakuniy test
@@ -166,15 +175,15 @@ const QuizSolver: React.FC<QuizSolverProps> = ({ quiz, onComplete }) => {
           </div>
           <div className="flex justify-between items-center pb-4 border-b border-slate-200 dark:border-slate-700">
             <span className="text-slate-600 dark:text-slate-400 font-medium">O'tish bali (minimum):</span>
-            <span className="font-bold text-slate-900 dark:text-slate-100">{quiz.passingScore ?? 85}%</span>
+            <span className="font-bold text-slate-900 dark:text-slate-100">{activePassingScore}%</span>
           </div>
           <div className="flex justify-between items-center pb-4 border-b border-slate-200 dark:border-slate-700">
             <span className="text-slate-600 dark:text-slate-400 font-medium">Vaqt chegarasi:</span>
-            <span className="font-bold text-slate-900 dark:text-slate-100">{quiz.timeLimitInMinutes ? `${quiz.timeLimitInMinutes} daqiqa` : 'Cheklanmagan'}</span>
+            <span className="font-bold text-slate-900 dark:text-slate-100">{activeTimeLimit ? `${activeTimeLimit} daqiqa` : 'Cheklanmagan'}</span>
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-slate-600 dark:text-slate-400 font-medium">Javoblarni o'zgartirish:</span>
-            <span className="font-bold text-slate-900 dark:text-slate-100">Mumkin (orqaga qaytish bor)</span>
+            <span className="text-slate-600 dark:text-slate-400 font-medium">Urinishlar soni:</span>
+            <span className="font-bold text-slate-900 dark:text-slate-100">Cheklanmagan</span>
           </div>
         </div>
 

@@ -1,18 +1,45 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { User, Question } from '../types';
-import { testAttemptService, TestAttemptResponse } from '../services/testAttempService';
+import { testAttemptService, TestAttemptResponse, TestAnswerResponse } from '../services/testAttempService';
 import { quizService } from '../services/quizService';
+import * as XLSX from 'xlsx';
 
 interface MyResultsProps {
   currentUser: User;
 }
 
+interface EnrichedAttempt {
+  id: number;
+  userName: string;
+  quizId: number;
+  quizName: string;
+  totalQuestions: number;
+  correctAnswers: number;
+  scorePercentage: number;
+  passed: boolean;
+  submittedAt: string;
+  answers: TestAnswerResponse[];
+}
+
 const MyResults: React.FC<MyResultsProps> = ({ currentUser }) => {
-  const [attempts, setAttempts] = useState<TestAttemptResponse[]>([]);
+  const [attempts, setAttempts] = useState<EnrichedAttempt[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [expandedAttemptId, setExpandedAttemptId] = useState<number | null>(null);
-  const [attemptQuestions, setAttemptQuestions] = useState<Record<number, Question[]>>({});
+  
+  // States for Analysis Modal
+  const [selectedAttemptForAnalysis, setSelectedAttemptForAnalysis] = useState<EnrichedAttempt | null>(null);
+  const [analysisQuestions, setAnalysisQuestions] = useState<Question[]>([]);
+  const [loadingAnalysis, setLoadingAnalysis] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSelectedAttemptForAnalysis(null);
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, []);
 
   useEffect(() => {
     const fetch = async () => {
@@ -20,7 +47,19 @@ const MyResults: React.FC<MyResultsProps> = ({ currentUser }) => {
       setError('');
       try {
         const data = await testAttemptService.getAttemptsByUser(currentUser.id);
-        setAttempts([...data].sort((a, b) =>
+        const enriched: EnrichedAttempt[] = data.map(a => ({
+          id: a.id,
+          userName: currentUser.name,
+          quizId: a.quizId ?? 0,
+          quizName: (a as any).name || (a as any).lesson || `Test #${a.quizId}`,
+          totalQuestions: a.totalQuestions,
+          correctAnswers: a.correctAnswers,
+          scorePercentage: Math.round(a.scorePercentage),
+          passed: a.passed,
+          submittedAt: new Date(a.submittedAt).toLocaleDateString('uz-UZ'),
+          answers: a.answers || [],
+        }));
+        setAttempts(enriched.sort((a, b) => 
           new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
         ));
       } catch (err) {
@@ -38,20 +77,39 @@ const MyResults: React.FC<MyResultsProps> = ({ currentUser }) => {
   const avgScore    = totalTests > 0 ? Math.round(attempts.reduce((sum, a) => sum + a.scorePercentage, 0) / totalTests) : 0;
   const bestScore   = totalTests > 0 ? Math.round(Math.max(...attempts.map(a => a.scorePercentage))) : 0;
 
-  const toggleAttempt = async (attempt: TestAttemptResponse) => {
-    if (expandedAttemptId === attempt.id) {
-      setExpandedAttemptId(null);
-      return;
+  const handleAnalyze = async (attempt: EnrichedAttempt) => {
+    setSelectedAttemptForAnalysis(attempt);
+    setLoadingAnalysis(true);
+    try {
+      const questions = await quizService.getQuizQuestions(attempt.quizId);
+      setAnalysisQuestions(questions);
+    } catch (err) {
+      console.error('Failed to load questions for analysis:', err);
+    } finally {
+      setLoadingAnalysis(false);
     }
-    setExpandedAttemptId(attempt.id);
-    if (attempt.quizId && !attemptQuestions[attempt.quizId]) {
-      try {
-        const questions = await quizService.getQuizQuestions(attempt.quizId);
-        setAttemptQuestions(prev => ({ ...prev, [attempt.quizId]: questions }));
-      } catch (err) {
-        console.error('Failed to fetch questions for attempt:', err);
-      }
-    }
+  };
+
+  const filteredAttempts = attempts.filter(a =>
+    a.quizName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    `Test #${a.quizId}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    a.submittedAt.includes(searchTerm)
+  );
+
+  const handleExportExcel = () => {
+    if (filteredAttempts.length === 0) return;
+    const dataToExport = filteredAttempts.map(a => ({
+      'Test Nomi': a.quizName,
+      'Jami savollar': a.totalQuestions,
+      "To'g'ri javoblar": a.correctAnswers,
+      'Ball (%)': a.scorePercentage,
+      'Sana': a.submittedAt,
+      'Holat': a.passed ? "O'tdi" : 'Yiqildi',
+    }));
+    const ws = XLSX.utils.json_to_sheet(dataToExport);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Mening Natijalarim');
+    XLSX.writeFile(wb, `mening_natijalarim_${new Date().toLocaleDateString()}.xlsx`);
   };
 
   if (loading) {
@@ -120,116 +178,209 @@ const MyResults: React.FC<MyResultsProps> = ({ currentUser }) => {
         </div>
       )}
 
-      {/* ─── Results list ────────────────────────────────────────────────── */}
+      {/* ─── Results list (Table like LeadDashboard) ───────────────────── */}
       {attempts.length > 0 && (
         <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
-          <div className="p-6 border-b border-slate-100 dark:border-slate-700">
+          <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <h3 className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              <i className="fas fa-history text-orange-600"></i>
-              Test tarixi
+              <i className="fas fa-clipboard-list text-orange-600"></i>
+              Mening test natijalarim
             </h3>
+            <div className="relative w-full sm:w-64">
+              <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+              <input
+                type="text"
+                placeholder="Test ID yoki sana..."
+                className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 text-slate-900 dark:text-slate-100"
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+              />
+            </div>
           </div>
+          
+          <div className="overflow-x-auto">
+            <table className="w-full text-left whitespace-nowrap">
+              <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider font-semibold border-b border-slate-100 dark:border-slate-700">
+                <tr>
+                  <th className="px-6 py-4">Dars</th>
+                  <th className="px-6 py-4 text-center">To'g'ri / Jami</th>
+                  <th className="px-6 py-4 text-center">Ball</th>
+                  <th className="px-6 py-4">Sana</th>
+                  <th className="px-6 py-4">Holat</th>
+                  <th className="px-6 py-4 text-right">Amallar</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
+                {filteredAttempts.map(a => (
+                  <tr key={a.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/80 transition-colors">
+                    <td className="px-6 py-4 text-slate-900 dark:text-slate-100 font-medium text-sm">{a.quizName}</td>
+                    <td className="px-6 py-4 text-center text-sm text-slate-600 dark:text-slate-400">{a.correctAnswers} / {a.totalQuestions}</td>
+                    <td className="px-6 py-4 text-center">
+                      <span className={`font-bold ${a.scorePercentage >= 80 ? 'text-green-600 dark:text-green-400' : 'text-orange-500 dark:text-orange-400'}`}>
+                        {a.scorePercentage}%
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-slate-500 dark:text-slate-400 text-sm">{a.submittedAt}</td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                        a.passed ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                      }`}>
+                        {a.passed ? "O'tdi" : 'Yiqildi'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <button
+                        onClick={() => handleAnalyze(a)}
+                        className="px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 ml-auto"
+                      >
+                        <i className="fas fa-search"></i> Tahlil qilish
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {filteredAttempts.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-10 text-center text-slate-400 dark:text-slate-500 text-sm italic">
+                      {attempts.length === 0 ? 'Hali test topshirmagansiz' : "Ma'lumot topilmadi"}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="p-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center">
+            <span className="text-xs text-slate-400 dark:text-slate-500">{filteredAttempts.length} ta natija</span>
+            <button
+              onClick={handleExportExcel}
+              disabled={filteredAttempts.length === 0}
+              className="text-orange-600 dark:text-orange-500 text-sm font-bold hover:underline disabled:text-slate-400 dark:disabled:text-slate-600 flex items-center gap-2"
+            >
+              <i className="fas fa-file-excel"></i> Excel yuklab olish
+            </button>
+          </div>
+        </div>
+      )}
 
-          <div className="divide-y divide-slate-100 dark:divide-slate-700">
-            {attempts.map((attempt, idx) => {
-              const score = Math.round(attempt.scorePercentage);
-              const date  = new Date(attempt.submittedAt).toLocaleDateString('uz-UZ', {
-                year: 'numeric', month: 'short', day: 'numeric',
-                hour: '2-digit', minute: '2-digit',
-              });
-
-              return (
-                <div key={attempt.id} className="flex flex-col border-b border-slate-100 dark:border-slate-700 last:border-0 overflow-hidden">
-                  <div 
-                    onClick={() => toggleAttempt(attempt)}
-                    className="p-5 flex items-center gap-4 hover:bg-slate-50/50 dark:hover:bg-slate-700/40 transition-colors cursor-pointer"
-                  >
-                    {/* Index */}
-                    <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 flex items-center justify-center text-xs font-bold shrink-0">
-                      {idx + 1}
-                    </div>
-
-                    {/* Lesson name */}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-bold text-slate-900 dark:text-slate-100 text-sm truncate">{attempt.lesson || `Test #${attempt.quizId}`}</p>
-                      <p className="text-xs text-slate-400 mt-0.5">{date}</p>
-                    </div>
-
-                    {/* Correct / Total */}
-                    <div className="text-center hidden sm:block">
-                      <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                        {attempt.correctAnswers} / {attempt.totalQuestions}
-                      </p>
-                      <p className="text-[10px] text-slate-400">to'g'ri javob</p>
-                    </div>
-
-                    {/* Score bar */}
-                    <div className="w-24 hidden md:block">
-                      <div className="w-full h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all ${score >= 80 ? 'bg-green-500' : 'bg-orange-400'}`}
-                          style={{ width: `${score}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Score % */}
-                    <div className="text-right shrink-0">
-                      <p className={`text-lg font-extrabold ${score >= 80 ? 'text-green-500' : 'text-orange-400'}`}>
-                        {score}%
-                      </p>
-                    </div>
-
-                    {/* Pass/Fail badge */}
-                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider shrink-0 mr-4 ${
-                      attempt.passed
-                        ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                        : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                    }`}>
-                      {attempt.passed ? "O'tdi" : 'Yiqildi'}
-                    </span>
-                    
-                    <i className={`fas fa-chevron-down text-slate-400 transition-transform ${expandedAttemptId === attempt.id ? 'rotate-180' : ''}`}></i>
+      {/* ─── Analysis Modal (Same as LeadDashboard) ──────────────────────── */}
+      {selectedAttemptForAnalysis && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-slate-900/70 backdrop-blur-md animate-in fade-in duration-200 p-4 sm:p-8">
+          <div className="bg-slate-50 dark:bg-slate-900 w-full max-w-5xl h-full sm:h-auto sm:max-h-[95vh] sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-slate-200/20 dark:border-slate-700/50">
+            {/* Header: Readonly Proof Style */}
+            <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-white dark:bg-slate-800 shrink-0">
+              <div className="flex items-center gap-4">
+                <div className="hidden sm:flex w-12 h-12 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-xl items-center justify-center text-xl shadow-inner">
+                  <i className="fas fa-file-contract"></i>
+                </div>
+                <div>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-1">
+                    <h3 className="font-bold text-slate-900 dark:text-slate-100 text-lg sm:text-xl">
+                      Test Natijasi
+                    </h3>
+                    <span className="px-2 py-0.5 rounded text-[10px] uppercase tracking-wider font-bold bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-600 w-max">Read-Only</span>
                   </div>
-                  
-                  {expandedAttemptId === attempt.id && attempt.answers && (
-                    <div className="bg-slate-50/50 dark:bg-slate-900/30 p-6 border-t border-slate-100 dark:border-slate-700 animate-fadeIn">
-                      <h4 className="font-bold text-slate-800 dark:text-slate-200 mb-4 flex items-center gap-2">
-                        <i className="fas fa-list-ol text-blue-500"></i> Javoblar tafsiloti
-                      </h4>
-                      <div className="space-y-4">
-                        {attempt.answers.map((answer, i) => {
-                          const q = attemptQuestions[attempt.quizId]?.find(q => q.id === answer.questionId.toString());
-                          return (
-                            <div key={i} className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                              <p className="font-semibold text-slate-800 dark:text-slate-200 mb-3 text-sm leading-relaxed">
-                                <span className="text-slate-400 mr-1">{i + 1}.</span> {q ? q.text : `Savol #${answer.questionId}`}
-                              </p>
-                              <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700">
-                                <span className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${answer.correct ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'}`}>
-                                  <i className={`fas fa-${answer.correct ? 'check' : 'times'} text-sm`}></i>
-                                </span>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium uppercase tracking-wider mb-0.5">Sizning javobingiz</p>
-                                  <p className={`text-sm font-bold truncate ${answer.correct ? 'text-slate-900 dark:text-slate-100' : 'text-red-600 dark:text-red-400'}`}>
-                                    {answer.selectedAnswer || 'Belgilanmagan'}
-                                  </p>
+                  <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium">Xodim: <span className="text-slate-700 dark:text-slate-300">{selectedAttemptForAnalysis.userName}</span> · {selectedAttemptForAnalysis.quizName} · {selectedAttemptForAnalysis.submittedAt}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedAttemptForAnalysis(null)}
+                className="w-10 h-10 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 transition-colors shrink-0 ml-2"
+              >
+                <i className="fas fa-times text-lg"></i>
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-slate-50/50 dark:bg-slate-900/50 custom-scrollbar relative">
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.03] dark:opacity-[0.02]">
+                <i className="fas fa-certificate text-[30rem]"></i>
+              </div>
+              {loadingAnalysis ? (
+                <div className="flex flex-col items-center justify-center py-20 relative z-10">
+                  <i className="fas fa-circle-notch fa-spin text-4xl text-blue-500 mb-4 drop-shadow-md"></i>
+                  <p className="text-slate-500 dark:text-slate-400 font-medium">Ma'lumotlar olinmoqda...</p>
+                </div>
+              ) : (
+                <div className="space-y-6 max-w-4xl mx-auto relative z-10">
+                  {selectedAttemptForAnalysis.answers.map((ans, idx) => {
+                    const question = analysisQuestions.find(q => q.id === ans.questionId.toString());
+                    return (
+                      <div key={idx} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 sm:p-6 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
+                        <div className={`absolute top-0 left-0 w-1.5 h-full ${ans.correct ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                        <div className="flex items-start gap-4 mb-5">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-bold text-lg shadow-sm ${ans.correct ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800'}`}>
+                            {idx + 1}
+                          </div>
+                          <div>
+                            <p className="font-bold text-slate-900 dark:text-slate-100 text-[15px] sm:text-[16px] leading-relaxed">
+                              {question ? question.text : `Savol ID: ${ans.questionId}`}
+                            </p>
+                          </div>
+                        </div>
+
+                        {question && (
+                          <div className="ml-14 grid grid-cols-1 gap-3 mb-2">
+                            {question.options.map((opt, oIdx) => {
+                              const isSelected = ans.selectedAnswer === opt;
+                              let optClass = 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-400';
+                              
+                              if (isSelected) {
+                                if (ans.correct) {
+                                  optClass = 'border-green-400 dark:border-green-600 bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300 ring-1 ring-green-400 dark:ring-green-600';
+                                } else {
+                                  optClass = 'border-red-400 dark:border-red-600 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300 ring-1 ring-red-400 dark:ring-red-600';
+                                }
+                              }
+
+                              return (
+                                <div key={oIdx} className={`flex items-center gap-3 text-sm p-3 rounded-xl border transition-all ${optClass}`}>
+                                  <span className={`w-7 h-7 rounded flex items-center justify-center text-xs font-bold shrink-0 ${isSelected ? (ans.correct ? 'bg-green-500 text-white' : 'bg-red-500 text-white') : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-300'}`}>
+                                    {String.fromCharCode(65 + oIdx)}
+                                  </span>
+                                  <span className="font-medium">{opt}</span>
+                                  {isSelected && (
+                                    <div className="ml-auto flex items-center gap-2">
+                                      <span className={`text-[10px] uppercase font-bold tracking-wider hidden sm:inline ${ans.correct ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>Tanlangan</span>
+                                      <i className={`fas fa-${ans.correct ? 'check-circle' : 'times-circle'} text-xl ${ans.correct ? 'text-green-500' : 'text-red-500'}`}></i>
+                                    </div>
+                                  )}
                                 </div>
-                              </div>
-                            </div>
-                          );
-                        })}
+                              );
+                            })}
+                          </div>
+                        )}
+                        {!question && (
+                           <div className="ml-14">
+                              <p className={`font-semibold text-sm ${ans.correct ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                Tanlangan javob: {ans.selectedAnswer || 'Belgilanmagan'}
+                              </p>
+                           </div>
+                        )}
                       </div>
+                    );
+                  })}
+                  {selectedAttemptForAnalysis.answers.length === 0 && (
+                    <div className="text-center py-10 bg-slate-100 dark:bg-slate-800 rounded-2xl text-slate-500 dark:text-slate-400 border border-dashed border-slate-300 dark:border-slate-700">
+                      Ushbu test urinishida javoblar mavjud emas.
                     </div>
                   )}
                 </div>
-              );
-            })}
+              )}
+            </div>
+            
+            <div className="p-4 sm:p-5 border-t border-slate-200 dark:border-slate-800 flex justify-end bg-white dark:bg-slate-800 shrink-0">
+              <button
+                onClick={() => setSelectedAttemptForAnalysis(null)}
+                className="px-8 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-md w-full sm:w-auto"
+              >
+                Yopish
+              </button>
+            </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
 };
 
-export default MyResults; 
+export default MyResults;
+ 
