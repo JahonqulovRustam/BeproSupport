@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<body>
+  <div id="root"></div>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/react-player/dist/ReactPlayer.standalone.js"></script>
+  <script>
+    const e = React.createElement;
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(e(ReactPlayer, { url: 'youtube.com/watch?v=dQw4w9WgXcQ' }));
+  </script>
+</body>
+</html>

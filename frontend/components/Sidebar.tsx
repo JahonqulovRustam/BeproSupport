@@ -229,8 +229,14 @@ const Sidebar: React.FC<SidebarProps> = ({
             title={isCollapsed ? currentUser.name : undefined}
             className="w-full bg-slate-800/50 rounded-xl p-3 flex items-center gap-3 hover:bg-slate-700/50 transition-all"
           >
-            <div className="w-10 h-10 rounded-xl bg-slate-700 flex items-center justify-center text-slate-400 flex-shrink-0">
-              <i className="fas fa-user"></i>
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+              role === 'ADMIN' ? 'bg-purple-500/20 text-purple-400' :
+              role === 'LEAD' ? 'bg-blue-500/20 text-blue-400' :
+              'bg-emerald-500/20 text-emerald-400'
+            }`}>
+              {role === 'ADMIN' ? <i className="fas fa-user-shield text-lg"></i> :
+               role === 'LEAD' ? <i className="fas fa-user-tie text-lg"></i> :
+               <i className="fas fa-user text-lg"></i>}
             </div>
             {!isCollapsed && (
               <>

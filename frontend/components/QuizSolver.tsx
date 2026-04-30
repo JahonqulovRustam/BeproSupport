@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import confetti from 'canvas-confetti';
 import { Quiz, Question } from '../types';
 import { quizService } from '../services/quizService';
 import { testAttemptService, TestAttemptResponse } from '../services/testAttempService';
@@ -22,6 +23,7 @@ const QuizSolver: React.FC<QuizSolverProps> = ({ quiz, onComplete }) => {
   const [result, setResult] = useState<TestAttemptResponse | null>(null);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [fullQuizData, setFullQuizData] = useState<Quiz | null>(null);
+  const [showExitDialog, setShowExitDialog] = useState(false);
 
   useEffect(() => {
     const loadQuestions = async () => {
@@ -94,6 +96,30 @@ const QuizSolver: React.FC<QuizSolverProps> = ({ quiz, onComplete }) => {
     }
   }, [status, timeLeft]);
 
+  useEffect(() => {
+    if (status === 'FINISHED' && result) {
+      if (result.passed) {
+        const duration = 3 * 1000;
+        const animationEnd = Date.now() + duration;
+        const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 999999 };
+
+        const randomInRange = (min: number, max: number) => Math.random() * (max - min) + min;
+
+        const interval: any = setInterval(function() {
+          const timeLeft = animationEnd - Date.now();
+
+          if (timeLeft <= 0) {
+            return clearInterval(interval);
+          }
+
+          const particleCount = 50 * (timeLeft / duration);
+          confetti(Object.assign({}, defaults, { particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } }));
+          confetti(Object.assign({}, defaults, { particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } }));
+        }, 250);
+      }
+    }
+  }, [status, result]);
+
   const handleSelect = (optionIndex: number) => {
     const currentQuestion = questions[currentIndex];
     setSelectedAnswers(prev => ({
@@ -117,10 +143,17 @@ const QuizSolver: React.FC<QuizSolverProps> = ({ quiz, onComplete }) => {
   };
 
   const handleExit = () => {
-    if (window.confirm("Rostdan ham testdan chiqmoqchimisiz? Barcha belgilagan javoblaringiz o'chib ketadi.")) {
-      setStatus('INTRO');
-      setSelectedAnswers({});
-    }
+    setShowExitDialog(true);
+  };
+
+  const confirmExit = () => {
+    setShowExitDialog(false);
+    setStatus('INTRO');
+    setSelectedAnswers({});
+  };
+
+  const cancelExit = () => {
+    setShowExitDialog(false);
   };
 
   if (isLoading) {
@@ -205,62 +238,90 @@ const QuizSolver: React.FC<QuizSolverProps> = ({ quiz, onComplete }) => {
   const progressPercent = ((currentIndex) / questions.length) * 100;
 
   return createPortal(
-    <div className="fixed inset-0 z-[99999] bg-slate-50 dark:bg-slate-900 flex flex-col animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-[99999] bg-slate-900 flex flex-col animate-in fade-in duration-300">
       
+      {showExitDialog && (
+        <div className="fixed inset-0 z-[100000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl p-8 max-w-md w-full animate-in zoom-in-95 duration-200">
+            <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-2xl flex items-center justify-center mx-auto mb-6">
+              <i className="fas fa-exclamation-triangle text-3xl"></i>
+            </div>
+            <h3 className="text-2xl font-bold text-center text-slate-900 dark:text-slate-100 mb-2">Testdan chiqish</h3>
+            <p className="text-center text-slate-500 dark:text-slate-400 mb-8">
+              Rostdan ham testdan chiqmoqchimisiz? Barcha belgilagan javoblaringiz o'chib ketadi va natijangiz saqlanmaydi.
+            </p>
+            <div className="flex gap-4">
+              <button
+                onClick={cancelExit}
+                className="flex-1 py-3 px-4 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl font-bold transition-colors"
+              >
+                Bekor qilish
+              </button>
+              <button
+                onClick={confirmExit}
+                className="flex-1 py-3 px-4 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold transition-colors shadow-lg shadow-red-600/20"
+              >
+                Ha, chiqish
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {status === 'SUBMITTING' && (
-        <div className="flex-1 flex flex-col items-center justify-center p-6">
-          <div className="w-16 h-16 border-4 border-blue-200 dark:border-blue-900 border-t-blue-600 dark:border-t-blue-400 rounded-full animate-spin mb-4"></div>
-          <p className="text-xl font-bold text-slate-900 dark:text-slate-100">Javoblaringiz tekshirilmoqda...</p>
+        <div className="flex-1 flex flex-col items-center justify-center p-6 bg-slate-900 text-white">
+          <div className="w-16 h-16 border-4 border-blue-900 border-t-blue-500 rounded-full animate-spin mb-4"></div>
+          <p className="text-xl font-bold">Javoblaringiz tekshirilmoqda...</p>
         </div>
       )}
 
       {status === 'IN_PROGRESS' && (
         <>
-          {/* Formal Top Bar */}
-          <header className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-8 py-4 flex items-center justify-between shadow-sm shrink-0">
+          {/* Strict Top Bar */}
+          <header className="bg-slate-950 border-b border-slate-800 px-8 py-5 flex items-center justify-between shadow-md shrink-0">
             <div className="flex items-center gap-4">
-              <div className="w-10 h-10 bg-slate-100 dark:bg-slate-700 rounded-lg flex items-center justify-center text-slate-600 dark:text-slate-400">
-                <i className="fas fa-tasks"></i>
+              <div className="w-12 h-12 bg-blue-900/30 border border-blue-800/50 rounded-xl flex items-center justify-center text-blue-400">
+                <i className="fas fa-laptop-code text-xl"></i>
               </div>
               <div>
-                <h2 className="font-bold text-slate-900 dark:text-slate-100 text-lg">{quiz.name}</h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Davom etmoqda...</p>
+                <h2 className="font-extrabold text-white tracking-wide text-lg uppercase">{quiz.name}</h2>
+                <p className="text-xs text-slate-400 font-medium tracking-widest uppercase mt-1">Rasmiy Test Jarayoni</p>
               </div>
             </div>
             <div className="flex items-center gap-6">
               {timeLeft !== null && (
-                <div className={`flex items-center gap-2 font-bold text-lg ${timeLeft < 60 ? 'text-red-500 animate-pulse' : 'text-slate-700 dark:text-slate-300'}`}>
-                  <i className="fas fa-clock"></i>
+                <div className={`flex items-center gap-3 font-mono font-bold text-xl bg-slate-900 px-5 py-2 rounded-lg border ${timeLeft < 60 ? 'text-red-400 border-red-900/50 animate-pulse' : 'text-slate-200 border-slate-700'}`}>
+                  <i className="fas fa-hourglass-half text-sm"></i>
                   {Math.floor(timeLeft / 60).toString().padStart(2, '0')}:{(timeLeft % 60).toString().padStart(2, '0')}
                 </div>
               )}
               <button
                 onClick={handleExit}
-                className="text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 font-medium text-sm flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                className="text-slate-400 hover:text-white font-medium text-sm flex items-center gap-2 px-5 py-2.5 rounded-lg hover:bg-slate-800 transition-colors border border-slate-800 hover:border-slate-600"
               >
-                <i className="fas fa-power-off"></i> Testdan chiqish
+                <i className="fas fa-sign-out-alt"></i> Chiqish
               </button>
             </div>
           </header>
 
           {/* Progress Bar */}
-          <div className="w-full bg-slate-200 dark:bg-slate-700 h-1.5 shrink-0">
+          <div className="w-full bg-slate-800 h-2 shrink-0">
             <div
-              className="bg-blue-600 h-1.5 transition-all duration-300 ease-out"
+              className="bg-blue-500 h-2 transition-all duration-300 ease-out shadow-[0_0_10px_rgba(59,130,246,0.5)]"
               style={{ width: `${progressPercent}%` }}
             ></div>
           </div>
 
           {/* Main Content */}
-          <main className="flex-1 max-w-4xl w-full mx-auto p-8 py-12 flex flex-col overflow-y-auto custom-scrollbar">
+          <main className="flex-1 max-w-5xl w-full mx-auto p-8 py-12 flex flex-col overflow-y-auto custom-scrollbar">
             <div className="flex items-center justify-between mb-8 shrink-0">
-              <span className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider bg-white dark:bg-slate-800 px-4 py-2 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700">
+              <span className="text-sm font-bold text-slate-400 uppercase tracking-widest bg-slate-800/50 px-5 py-2.5 rounded-xl border border-slate-700/50">
                 Savol {currentIndex + 1} / {questions.length}
               </span>
             </div>
 
-            <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm rounded-2xl p-10 mb-8 shrink-0">
-              <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100 leading-relaxed mb-8">
+            <div className="bg-slate-800/40 border border-slate-700/50 shadow-2xl rounded-3xl p-12 mb-8 shrink-0 backdrop-blur-sm">
+              <h3 className="text-3xl font-bold text-white leading-relaxed mb-10">
                 {currentQuestion.text}
               </h3>
 
@@ -271,14 +332,14 @@ const QuizSolver: React.FC<QuizSolverProps> = ({ quiz, onComplete }) => {
                     <button
                       key={idx}
                       onClick={() => handleSelect(idx)}
-                      className={`w-full text-left p-5 rounded-xl border-2 transition-all duration-200 flex items-start gap-4 ${
+                      className={`w-full text-left p-6 rounded-2xl border-2 transition-all duration-200 flex items-center gap-6 ${
                         isSelected
-                          ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-500 text-blue-900 dark:text-blue-100'
-                          : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800/50 text-slate-700 dark:text-slate-300'
+                          ? 'border-blue-500 bg-blue-900/20 text-white shadow-[0_0_15px_rgba(59,130,246,0.15)]'
+                          : 'border-slate-700 hover:border-slate-500 hover:bg-slate-800/80 text-slate-300'
                       }`}
                     >
-                      <span className={`w-8 h-8 rounded shrink-0 flex items-center justify-center font-bold text-sm ${
-                        isSelected ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
+                      <span className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center font-bold text-lg transition-colors ${
+                        isSelected ? 'bg-blue-500 text-white shadow-inner' : 'bg-slate-800 text-slate-500'
                       }`}>
                         {String.fromCharCode(65 + idx)}
                       </span>
@@ -296,9 +357,9 @@ const QuizSolver: React.FC<QuizSolverProps> = ({ quiz, onComplete }) => {
               {currentIndex > 0 ? (
                 <button
                   onClick={handlePrev}
-                  className="px-8 py-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-xl font-bold text-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm flex items-center gap-3"
+                  className="px-8 py-4 bg-slate-800 border border-slate-700 text-slate-300 rounded-xl font-bold text-lg hover:bg-slate-700 transition-all flex items-center gap-3"
                 >
-                  <i className="fas fa-arrow-left"></i> Orqaga
+                  <i className="fas fa-arrow-left"></i> Oldingi
                 </button>
               ) : (
                 <div></div>
@@ -307,10 +368,16 @@ const QuizSolver: React.FC<QuizSolverProps> = ({ quiz, onComplete }) => {
               <button
                 disabled={selectedAnswers[currentQuestion.id] === undefined}
                 onClick={handleNext}
-                className="px-10 py-4 bg-blue-600 text-white rounded-xl font-bold text-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-blue-600/20 flex items-center gap-3"
+                className={`px-12 py-4 rounded-xl font-bold text-lg transition-all flex items-center gap-3 ${
+                  selectedAnswers[currentQuestion.id] === undefined
+                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                    : currentIndex === questions.length - 1
+                      ? 'bg-green-600 hover:bg-green-500 text-white shadow-[0_0_20px_rgba(22,163,74,0.4)]'
+                      : 'bg-blue-600 hover:bg-blue-500 text-white shadow-[0_0_20px_rgba(37,99,235,0.4)]'
+                }`}
               >
-                {currentIndex === questions.length - 1 ? 'Testni yakunlash' : 'Keyingi savol'}
-                <i className={`fas ${currentIndex === questions.length - 1 ? 'fa-check' : 'fa-arrow-right'}`}></i>
+                {currentIndex === questions.length - 1 ? 'Yakunlash va Jo\'natish' : 'Keyingi'}
+                <i className={`fas ${currentIndex === questions.length - 1 ? 'fa-paper-plane' : 'fa-arrow-right'}`}></i>
               </button>
             </div>
           </main>
@@ -318,46 +385,53 @@ const QuizSolver: React.FC<QuizSolverProps> = ({ quiz, onComplete }) => {
       )}
 
       {status === 'FINISHED' && result && (
-        <div className="flex-1 flex flex-col overflow-y-auto custom-scrollbar p-6">
-          <div className="m-auto w-full max-w-3xl bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+        <div className={`flex-1 flex flex-col overflow-y-auto custom-scrollbar p-6 transition-colors duration-1000 ${result.passed ? 'bg-slate-900' : 'bg-red-950/20'}`}>
+          <div className={`m-auto w-full max-w-3xl bg-slate-900 rounded-3xl shadow-2xl border ${result.passed ? 'border-slate-800' : 'border-red-900/50 shadow-[0_0_50px_rgba(220,38,38,0.15)]'} overflow-hidden relative`}>
             
-            <div className="text-center p-10 border-b border-slate-200 dark:border-slate-700">
-              <div className={`w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 ${
-                result.passed ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400' : 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'
+            {!result.passed && (
+              <div className="absolute top-0 left-0 w-full h-2 bg-red-600"></div>
+            )}
+            {result.passed && (
+              <div className="absolute top-0 left-0 w-full h-2 bg-green-500"></div>
+            )}
+
+            <div className="text-center p-12 border-b border-slate-800">
+              <div className={`w-28 h-28 rounded-full flex items-center justify-center mx-auto mb-8 ${
+                result.passed ? 'bg-green-500/20 text-green-400 shadow-[0_0_30px_rgba(34,197,94,0.3)]' : 'bg-red-500/20 text-red-500 shadow-[0_0_30px_rgba(239,68,68,0.3)]'
               }`}>
-                <i className={`fas ${result.passed ? 'fa-check' : 'fa-times'} text-5xl`}></i>
+                <i className={`fas ${result.passed ? 'fa-check-double' : 'fa-times'} text-6xl`}></i>
               </div>
 
-              <h2 className="text-4xl font-extrabold text-slate-900 dark:text-slate-100 mb-2">Test yakunlandi</h2>
-              <p className="text-slate-500 dark:text-slate-400 mb-8 text-lg">Natijalaringiz hisoblandi.</p>
+              <h2 className="text-5xl font-black text-white mb-4 tracking-tight">{result.passed ? 'Muvaqqiyatli!' : 'Sinovdan O\'ta Olmadingiz'}</h2>
+              <p className="text-slate-400 mb-10 text-xl font-medium tracking-wide">Rasmiy natijalar e'lon qilindi</p>
 
-              <div className="grid grid-cols-2 gap-6 mb-8">
-                <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-2xl p-6">
-                  <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mb-2">To'g'ri javoblar</p>
-                  <p className="text-3xl font-bold text-slate-900 dark:text-slate-100">{result.correctAnswers} <span className="text-lg text-slate-400">/ {questions.length}</span></p>
+              <div className="grid grid-cols-2 gap-8 mb-10">
+                <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl p-8">
+                  <p className="text-slate-400 text-sm uppercase tracking-widest font-bold mb-3">To'g'ri javoblar</p>
+                  <p className="text-5xl font-black text-white">{result.correctAnswers} <span className="text-2xl text-slate-500">/ {questions.length}</span></p>
                 </div>
-                <div className={`border rounded-2xl p-6 ${result.passed ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
-                  <p className={`text-sm font-medium mb-2 ${result.passed ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>Umumiy ball</p>
-                  <p className={`text-4xl font-bold ${result.passed ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{Math.round(result.scorePercentage)}%</p>
+                <div className={`border rounded-2xl p-8 ${result.passed ? 'bg-green-900/10 border-green-500/30' : 'bg-red-900/10 border-red-500/30'}`}>
+                  <p className={`text-sm uppercase tracking-widest font-bold mb-3 ${result.passed ? 'text-green-500' : 'text-red-500'}`}>Umumiy ball</p>
+                  <p className={`text-5xl font-black ${result.passed ? 'text-green-400' : 'text-red-500'}`}>{Math.round(result.scorePercentage)}%</p>
                 </div>
               </div>
 
-              <p className={`text-xl font-bold ${result.passed ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                {result.passed ? "Tabriklaymiz, siz testdan o'tdingiz! Natija saqlandi." : "Afsuski, o'tish balini to'play olmadingiz."}
+              <p className={`text-2xl font-bold ${result.passed ? 'text-green-400' : 'text-red-400'}`}>
+                {result.passed ? "Tabriklaymiz! Siz o'tish balini to'pladingiz va sertifikatga loyiq ko'rildingiz." : "Afsuski, talab qilingan o'tish balini to'play olmadingiz."}
               </p>
             </div>
 
-            <div className="p-10 bg-slate-50 dark:bg-slate-900/30">
-              <div className="flex gap-4 justify-center">
+            <div className="p-10 bg-slate-950/50">
+              <div className="flex gap-6 justify-center">
                 <button
                   onClick={() => {
                     onComplete?.({ correctCount: result.correctAnswers, totalCount: questions.length, score: result.scorePercentage });
                     setStatus('INTRO');
                     setSelectedAnswers({});
                   }}
-                  className="px-10 py-4 bg-slate-800 dark:bg-slate-700 text-white rounded-xl font-bold hover:bg-slate-900 dark:hover:bg-slate-600 transition-colors text-lg flex items-center gap-3"
+                  className="px-10 py-4 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-700 transition-colors text-lg flex items-center gap-3 border border-slate-700"
                 >
-                  <i className="fas fa-home"></i> Darsga qaytish
+                  <i className="fas fa-sign-out-alt"></i> Natijani saqlash va chiqish
                 </button>
 
                 {!result.passed && (
@@ -367,9 +441,9 @@ const QuizSolver: React.FC<QuizSolverProps> = ({ quiz, onComplete }) => {
                       setCurrentIndex(0);
                       setSelectedAnswers({});
                     }}
-                    className="px-10 py-4 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-lg flex items-center gap-3"
+                    className="px-10 py-4 bg-red-600/10 border-2 border-red-500/30 text-red-400 rounded-xl font-bold hover:bg-red-600/20 transition-colors text-lg flex items-center gap-3 shadow-[0_0_15px_rgba(239,68,68,0.1)]"
                   >
-                    <i className="fas fa-redo"></i> Qayta urinish
+                    <i className="fas fa-redo-alt"></i> Qayta urinib ko'rish
                   </button>
                 )}
               </div>

@@ -23,6 +23,26 @@ export interface SubModule {
   moduleResponse?: string; // Module ID reference from API
   lessons: Lesson[];
   quizResponse?: Quiz | null; // Quiz for this sub-module if exists
+  isQuizAccessible?: boolean;
+}
+
+export interface ListOfLessons {
+  id: string;
+  title: string;
+}
+
+export interface ListOfQuiz {
+  id: string;
+  name: string; // the API schema says ListOfQuiz has title, but it might be name, I'll put both title/name depending on what's used
+  title?: string;
+}
+
+export interface ListOfSubModule {
+  id: string;
+  name: string;
+  lessons: ListOfLessons[];
+  quiz?: ListOfQuiz | null;
+  isQuizAccessible: boolean;
 }
 
 export interface SystemModule {
@@ -32,6 +52,7 @@ export interface SystemModule {
   description: string;
   subModules?: SubModule[];
   lessons: Lesson[]; // All lessons at module level
+  numberOfSubModules?: number;
 }
 
 export interface Media {

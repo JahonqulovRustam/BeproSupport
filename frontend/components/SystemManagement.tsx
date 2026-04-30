@@ -119,7 +119,7 @@ const SystemManagement: React.FC<SystemManagementProps> = ({ modules, onAddModul
               <tr className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider font-bold">
                 <th className="p-4 border-b border-slate-100 dark:border-slate-700 font-semibold">Tizim</th>
                 <th className="p-4 border-b border-slate-100 dark:border-slate-700 font-semibold w-1/2">Tavsif</th>
-                <th className="p-4 border-b border-slate-100 dark:border-slate-700 font-semibold text-center">Darslar</th>
+                <th className="p-4 border-b border-slate-100 dark:border-slate-700 font-semibold text-center">Sub-modullar</th>
                 <th className="p-4 border-b border-slate-100 dark:border-slate-700 font-semibold text-right">Harakatlar</th>
               </tr>
             </thead>
@@ -141,7 +141,7 @@ const SystemManagement: React.FC<SystemManagementProps> = ({ modules, onAddModul
                   </td>
                   <td className="p-4 text-center">
                     <span className="text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-3 py-1 rounded-full">
-                      {module.lessons.length}
+                      {module.numberOfSubModules || module.subModules?.length || 0}
                     </span>
                   </td>
                   <td className="p-4 text-right space-x-2">

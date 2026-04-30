@@ -115,8 +115,9 @@ export const quizService = {
    * GET /api/quiz/{id}
    */
   async getQuizById(id: number): Promise<Quiz> {
-    const response = await apiClient.get<QuizResponse>(`/api/quiz/${id}`);
-    return mapQuiz(response.data);
+    const response = await apiClient.get<QuizResponse | QuizResponse[]>('/api/quiz', { params: { id: id } });
+    const data = Array.isArray(response.data) ? response.data[0] : response.data;
+    return mapQuiz(data);
   },
 
   /**
@@ -191,12 +192,30 @@ export const quizService = {
   },
 
   /**
-   * Get all questions for a quiz
+   * Get 10 random questions to start the quiz
+   * GET /api/quiz/start/{id}
+   */
+  async startQuiz(quizId: string | number): Promise<Question[]> {
+    const response = await apiClient.get<QuestionResponse[]>(`/api/quiz/start/${quizId}`);
+    return response.data.map(mapQuestion);
+  },
+
+  /**
+   * Get all questions for a quiz (Admin use)
    * GET /api/quiz/{quiz_id}/questions
    */
   async getQuizQuestions(quizId: string | number): Promise<Question[]> {
     const response = await apiClient.get<QuestionResponse[]>(`/api/quiz/${quizId}/questions`);
     return response.data.map(mapQuestion);
+  },
+
+  /**
+   * Get a single question by ID
+   * GET /api/quiz/{quiz_id}/questions/{id}
+   */
+  async getQuestionById(quizId: number | string, id: number | string): Promise<Question> {
+    const response = await apiClient.get<QuestionResponse>(`/api/quiz/${quizId}/questions/${id}`);
+    return mapQuestion(response.data);
   },
 
   /**

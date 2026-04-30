@@ -56,7 +56,10 @@ const MyResults: React.FC<MyResultsProps> = ({ currentUser }) => {
           correctAnswers: a.correctAnswers,
           scorePercentage: Math.round(a.scorePercentage),
           passed: a.passed,
-          submittedAt: new Date(a.submittedAt).toLocaleDateString('uz-UZ'),
+          submittedAt: new Date(a.submittedAt).toLocaleString('uz-UZ', { 
+            day: '2-digit', month: '2-digit', year: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+          }),
           answers: a.answers || [],
         }));
         setAttempts(enriched.sort((a, b) => 
@@ -81,8 +84,12 @@ const MyResults: React.FC<MyResultsProps> = ({ currentUser }) => {
     setSelectedAttemptForAnalysis(attempt);
     setLoadingAnalysis(true);
     try {
-      const questions = await quizService.getQuizQuestions(attempt.quizId);
-      setAnalysisQuestions(questions);
+      const promises = attempt.answers.map(ans => 
+        quizService.getQuestionById(attempt.quizId || 1, ans.questionId).catch(() => null)
+      );
+      const results = await Promise.all(promises);
+      const validQuestions = results.filter(q => q !== null) as Question[];
+      setAnalysisQuestions(validQuestions);
     } catch (err) {
       console.error('Failed to load questions for analysis:', err);
     } finally {
@@ -129,8 +136,14 @@ const MyResults: React.FC<MyResultsProps> = ({ currentUser }) => {
       {/* ─── Hero card — muted, not neon ─────────────────────────────────── */}
       <div className="bg-slate-800 dark:bg-slate-900 rounded-3xl p-8 text-white border border-slate-700">
         <div className="flex items-center gap-4 mb-6">
-          <div className="w-16 h-16 rounded-2xl bg-white/10 flex items-center justify-center text-3xl shrink-0">
-            <i className="fas fa-user-graduate"></i>
+          <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-3xl shrink-0 ${
+            currentUser.role === 'ADMIN' ? 'bg-purple-500/20 text-purple-400' :
+            currentUser.role === 'LEAD' ? 'bg-blue-500/20 text-blue-400' :
+            'bg-emerald-500/20 text-emerald-400'
+          }`}>
+            {currentUser.role === 'ADMIN' ? <i className="fas fa-user-shield"></i> :
+             currentUser.role === 'LEAD' ? <i className="fas fa-user-tie"></i> :
+             <i className="fas fa-user"></i>}
           </div>
           <div>
             <h2 className="text-2xl font-bold">{currentUser.name}</h2>
@@ -319,7 +332,7 @@ const MyResults: React.FC<MyResultsProps> = ({ currentUser }) => {
                         {question && (
                           <div className="ml-14 grid grid-cols-1 gap-3 mb-2">
                             {question.options.map((opt, oIdx) => {
-                              const isSelected = ans.selectedAnswer === opt;
+                              const isSelected = ans.selectedAnswer?.trim() === opt?.trim();
                               let optClass = 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-400';
                               
                               if (isSelected) {
@@ -345,6 +358,11 @@ const MyResults: React.FC<MyResultsProps> = ({ currentUser }) => {
                                 </div>
                               );
                             })}
+                            {!question.options.some(opt => ans.selectedAnswer?.trim() === opt?.trim()) && ans.selectedAnswer && (
+                               <p className={`font-semibold text-sm mt-2 ${ans.correct ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                  Tanlangan javob (eski variant): {ans.selectedAnswer}
+                               </p>
+                            )}
                           </div>
                         )}
                         {!question && (

@@ -19,6 +19,8 @@ interface QuizResponseData {
   id: number;
   name: string;
   questions: QuestionResponse[];
+  timeLimitInMinutes?: number;
+  passingScore?: number;
 }
 
 interface LessonResponse {
@@ -34,9 +36,11 @@ interface LessonResponse {
 interface SubModuleResponse {
   id: number;
   name: string;
-  moduleResponse: number;
-  lessons: LessonResponse[];
+  moduleResponse?: number;
+  lessons?: any[]; // using any to accept both LessonResponse and ListOfLessons
   quizResponse?: QuizResponseData | null;
+  quiz?: any | null; // from ListOfSubModule
+  isQuizAccessible?: boolean;
 }
 
 interface ModuleResponse {
@@ -80,23 +84,39 @@ const mapQuiz = (q: QuizResponseData): Quiz => ({
   name: q.name,
   questions: (q.questions || []).map(mapQuestion),
   subModuleId: '',
+  timeLimitInMinutes: q.timeLimitInMinutes,
+  passingScore: q.passingScore,
 });
 
 const mapSubModule = (s: SubModuleResponse): SubModule => ({
   id: s.id.toString(),
   name: s.name,
   moduleResponse: s.moduleResponse?.toString(),
-  lessons: (s.lessons || []).map(mapLesson),
-  quizResponse: s.quizResponse ? mapQuiz(s.quizResponse) : null,
+  // Handle both full LessonResponse and ListOfLessons
+  lessons: (s.lessons || []).map(l => ({
+    id: l.id.toString(),
+    title: l.title,
+    description: l.description || '',
+    videoUrl: l.videoUrl || (l.media?.find((m: any) => m.type === 'VIDEO')?.url || ''),
+    media: (l.media || []).map(mapMedia),
+  })),
+  // Handle both quizResponse and quiz (from ListOfSubModule)
+  quizResponse: s.quizResponse 
+    ? mapQuiz(s.quizResponse) 
+    : s.quiz 
+      ? { id: s.quiz.id.toString(), name: s.quiz.title || s.quiz.name || '', questions: [], subModuleId: s.id.toString() } 
+      : null,
+  isQuizAccessible: s.isQuizAccessible ?? true,
 });
 
-const mapModule = (m: ModuleResponse): SystemModule => ({
+const mapModule = (m: ModuleResponse | any): SystemModule => ({
   id: m.id.toString(),
-  name: m.title,
-  description: m.description,
+  name: m.title || m.name || '',
+  description: m.description || '',
   icon: m.icon || 'fa-folder',
   subModules: (m.subModules || []).map(mapSubModule),
   lessons: (m.lessons || []).map(mapLesson),
+  numberOfSubModules: m.numberOfSubModules || 0,
 });
 
 // ─── Service ──────────────────────────────────────────────────────────────────
@@ -135,6 +155,15 @@ export const moduleService = {
    */
   async getAllSubModules(): Promise<SubModule[]> {
     const response = await apiClient.get<SubModuleResponse[]>('/api/submodules');
+    return response.data.map(mapSubModule);
+  },
+
+  /**
+   * Get sub-modules by module ID
+   * GET /api/submodules?module_id={moduleId}
+   */
+  async getSubModulesByModuleId(moduleId: string | number): Promise<SubModule[]> {
+    const response = await apiClient.get<SubModuleResponse[]>(`/api/submodules?module_id=${moduleId}`);
     return response.data.map(mapSubModule);
   },
 
@@ -181,8 +210,19 @@ export const moduleService = {
   },
 
   /**
-   * Get lessons by module ID
+   * Get lesson by ID
    * GET /api/lessons/{id}
+   */
+  async getLessonById(id: string | number): Promise<Lesson> {
+    const response = await apiClient.get<LessonResponse | LessonResponse[]>('/api/lessons', { params: { id: id } });
+    const data = Array.isArray(response.data) ? response.data[0] : response.data;
+    return mapLesson(data);
+  },
+
+  /**
+   * Get lessons by module ID
+   * GET /api/lessons/{id} - Wait, the Swagger says /api/lessons/{id} operationId getByModule, but it's likely getLessonById.
+   * I'll just keep getLessonsByModule and add getLessonById using the same endpoint since it seems to be returning LessonResponse.
    */
   async getLessonsByModule(moduleId: string): Promise<LessonResponse> {
     const response = await apiClient.get<LessonResponse>(`/api/lessons/${moduleId}`);
@@ -238,7 +278,7 @@ export const moduleService = {
     id: string,
     data: { title?: string; description?: string }
   ): Promise<Lesson> {
-    const response = await apiClient.put<LessonResponse>(`/api/lessons/${id}`, data);
+    const response = await apiClient.put<LessonResponse>(`/api/lessons`, data, { params: { id: id } });
     return mapLesson(response.data);
   },
 
@@ -247,7 +287,7 @@ export const moduleService = {
    * DELETE /api/lessons/{id}
    */
   async deleteLesson(id: string): Promise<void> {
-    await apiClient.delete(`/api/lessons/${id}`);
+    await apiClient.delete(`/api/lessons`, { params: { id: id } });
   },
 
   // ─── Media Operations ─────────────────────────────────────────────────────────

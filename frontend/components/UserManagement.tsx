@@ -140,8 +140,14 @@ const UserManagement: React.FC<UserManagementProps> = ({ currentUser, users, onA
                 <tr key={user.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors group">
                   <td className="p-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-400 dark:text-slate-500 font-bold text-sm shrink-0">
-                        {user.name.charAt(0).toUpperCase()}
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shrink-0 ${
+                        user.role === 'ADMIN' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400' :
+                        user.role === 'LEAD' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' :
+                        'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'
+                      }`}>
+                        {user.role === 'ADMIN' ? <i className="fas fa-user-shield text-lg" title="Admin"></i> :
+                         user.role === 'LEAD' ? <i className="fas fa-user-tie text-lg" title="Lead"></i> :
+                         <i className="fas fa-user text-lg" title="Xodim"></i>}
                       </div>
                       <span className="font-bold text-slate-900 dark:text-slate-100">{user.name}</span>
                     </div>
@@ -155,7 +161,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ currentUser, users, onA
                     <span className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full ${
                       user.role === 'ADMIN' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400' : 
                       user.role === 'LEAD' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 
-                      'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                      'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'
                     }`}>
                       {user.role}
                     </span>

@@ -73,8 +73,14 @@ const Settings: React.FC<SettingsProps> = ({ currentUser, onUpdateProfile }) => 
         {/* Header */}
         <div className="bg-slate-900 dark:bg-slate-950 p-8 text-white">
           <div className="flex items-center gap-6">
-            <div className="w-20 h-20 rounded-2xl bg-white/10 flex items-center justify-center text-3xl font-bold tracking-tight shrink-0">
-              {initials || <i className="fas fa-user-gear"></i>}
+            <div className={`w-20 h-20 rounded-2xl flex items-center justify-center text-3xl font-bold tracking-tight shrink-0 ${
+              currentUser.role === 'ADMIN' ? 'bg-purple-500/20 text-purple-400' :
+              currentUser.role === 'LEAD' ? 'bg-blue-500/20 text-blue-400' :
+              'bg-emerald-500/20 text-emerald-400'
+            }`}>
+              {currentUser.role === 'ADMIN' ? <i className="fas fa-user-shield"></i> :
+               currentUser.role === 'LEAD' ? <i className="fas fa-user-tie"></i> :
+               <i className="fas fa-user"></i>}
             </div>
             <div className="min-w-0">
               <h3 className="text-2xl font-bold truncate">{fullName || 'Profil sozlamalari'}</h3>

@@ -40,11 +40,15 @@ export const progressService = {
    */
   async updateLessonProgress(userId: number, lessonId: number, watchPercentage: number): Promise<void> {
     try {
+      const now = new Date();
+      const tzOffset = now.getTimezoneOffset() * 60000; // offset in milliseconds
+      const localISOTime = new Date(now.getTime() - tzOffset).toISOString().slice(0, -1); // remove 'Z'
+
       await apiClient.post('/api/user_progress', {
         userId,
         lessonId,
         watchPercentage: Math.min(100, Math.round(watchPercentage)), // Ensure max 100% and integer
-        lastWatchAt: new Date().toISOString()
+        lastWatchAt: localISOTime
       });
     } catch (error) {
       console.error('Failed to update lesson progress:', error);

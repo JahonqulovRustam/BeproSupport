@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import * as XLSX from 'xlsx';
 import { SystemModule, Question } from '../types';
 import { testAttemptService, TestAttemptResponse, TestAnswerResponse } from '../services/testAttempService';
@@ -23,6 +23,7 @@ interface EnrichedAttempt {
   scorePercentage: number;
   passed: boolean;
   submittedAt: string;
+  rawDate: string;
   answers: TestAnswerResponse[];
 }
 
@@ -63,7 +64,11 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
           correctAnswers: a.correctAnswers,
           scorePercentage: Math.round(a.scorePercentage),
           passed: a.passed,
-          submittedAt: new Date(a.submittedAt).toLocaleDateString('uz-UZ'),
+          submittedAt: new Date(a.submittedAt).toLocaleString('uz-UZ', { 
+            day: '2-digit', month: '2-digit', year: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+          }),
+          rawDate: a.submittedAt,
           answers: a.answers || [],
         }));
 
@@ -83,6 +88,28 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
   const passedCount = attempts.filter(a => a.passed).length;
   const activeUserCount = new Set(attempts.map(a => a.userName)).size;
 
+  const trendMap: Record<string, { passed: number; failed: number; dateStr: string }> = {};
+  attempts.forEach(a => {
+    try {
+      const d = new Date(a.rawDate);
+      if (!isNaN(d.getTime())) {
+        const key = d.toISOString().split('T')[0];
+        if (!trendMap[key]) {
+          trendMap[key] = { passed: 0, failed: 0, dateStr: `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}` };
+        }
+        if (a.passed) trendMap[key].passed += 1;
+        else trendMap[key].failed += 1;
+      }
+    } catch (e) {}
+  });
+
+  const chartData = Object.keys(trendMap).sort().map(key => ({
+    name: trendMap[key].dateStr,
+    Muaffaqiyatli: trendMap[key].passed,
+    Yiqildi: trendMap[key].failed,
+  })).slice(-14);
+
+  // Still keeping userScoreMap for "Eng yaxshi mutaxassislar"
   const userScoreMap: Record<string, { total: number; count: number }> = {};
   attempts.forEach(a => {
     if (!userScoreMap[a.userName]) userScoreMap[a.userName] = { total: 0, count: 0 };
@@ -90,7 +117,7 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
     userScoreMap[a.userName].count += 1;
   });
 
-  const chartData = Object.entries(userScoreMap)
+  const topUsersData = Object.entries(userScoreMap)
     .map(([name, { total, count }]) => ({
       name: name.split(' ')[0],
       fullName: name,
@@ -98,7 +125,7 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
       completed: count,
     }))
     .sort((a, b) => b.score - a.score)
-    .slice(0, 10);
+    .slice(0, 5); // Just top 5 to fit nicely
 
   const filteredAttempts = attempts.filter(a =>
     a.userName.toLowerCase().includes(searchTerm.toLowerCase())
@@ -125,8 +152,12 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
     setSelectedAttemptForAnalysis(attempt);
     setLoadingAnalysis(true);
     try {
-      const questions = await quizService.getQuizQuestions(attempt.quizId);
-      setAnalysisQuestions(questions);
+      const promises = attempt.answers.map(ans => 
+        quizService.getQuestionById(attempt.quizId || 1, ans.questionId).catch(() => null)
+      );
+      const results = await Promise.all(promises);
+      const validQuestions = results.filter(q => q !== null) as Question[];
+      setAnalysisQuestions(validQuestions);
     } catch (err) {
       console.error('Failed to load questions for analysis:', err);
     } finally {
@@ -192,27 +223,31 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
             <h3 className="font-bold text-slate-900 mb-6 flex items-center gap-2">
-              <i className="fas fa-chart-bar text-orange-600"></i>
-              Jamoa samaradorligi
+              <i className="fas fa-chart-area text-blue-600"></i>
+              Test topshirish dinamikasi
             </h3>
             <div style={{ width: '100%', height: 256 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData}>
+                <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorPassed" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorFailed" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
-                  <YAxis domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dy={10} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} allowDecimals={false} />
                   <Tooltip
-                    cursor={{ fill: '#f8fafc' }}
                     contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                    formatter={(value: number) => [`${value}%`, "O'rtacha ball"]}
-                    labelFormatter={(_: any, payload: any) => payload?.[0]?.payload?.fullName || ''}
                   />
-                  <Bar dataKey="score" radius={[4, 4, 0, 0]}>
-                    {chartData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
+                  <Area type="monotone" dataKey="Muaffaqiyatli" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorPassed)" />
+                  <Area type="monotone" dataKey="Yiqildi" stroke="#ef4444" strokeWidth={3} fillOpacity={1} fill="url(#colorFailed)" />
+                </AreaChart>
               </ResponsiveContainer>
             </div>
           </div>
@@ -223,7 +258,7 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
               Eng yaxshi mutaxassislar
             </h3>
             <div className="space-y-3">
-              {chartData.map((emp, idx) => (
+              {topUsersData.map((emp, idx) => (
                 <div key={idx} className="flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 transition-colors">
                   <div className="flex items-center gap-3">
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
@@ -389,7 +424,7 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
                         {question && (
                           <div className="ml-14 grid grid-cols-1 gap-3 mb-2">
                             {question.options.map((opt, oIdx) => {
-                              const isSelected = ans.selectedAnswer === opt;
+                              const isSelected = ans.selectedAnswer?.trim() === opt?.trim();
                               let optClass = 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-400';
                               
                               if (isSelected) {
@@ -415,6 +450,11 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
                                 </div>
                               );
                             })}
+                            {!question.options.some(opt => ans.selectedAnswer?.trim() === opt?.trim()) && ans.selectedAnswer && (
+                               <p className={`font-semibold text-sm mt-2 ${ans.correct ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                  Tanlangan javob (eski variant): {ans.selectedAnswer}
+                               </p>
+                            )}
                           </div>
                         )}
                         {!question && (
