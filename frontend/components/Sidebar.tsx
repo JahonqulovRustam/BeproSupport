@@ -16,6 +16,8 @@ interface SidebarProps {
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
   onGoHome: () => void;
+  isMobileSidebarOpen: boolean;
+  onCloseMobile: () => void;
 }
 
 const roleNames: Record<UserRole, string> = {
@@ -39,6 +41,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   theme,
   onToggleTheme,
   onGoHome,
+  isMobileSidebarOpen,
+  onCloseMobile,
 }) => {
   const role = currentUser.role;
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -70,20 +74,29 @@ const Sidebar: React.FC<SidebarProps> = ({
     } ${isCollapsed ? 'justify-center' : ''}`;
 
   return (
-    <div className="relative flex-shrink-0">
-      {/* Sidebar */}
-      <aside
-        className={`${
-          isCollapsed ? 'w-16' : 'w-64'
-        } bg-slate-900 text-white h-screen flex flex-col sticky top-0 overflow-hidden transition-all duration-300`}
-      >
+    <>
+      {/* Mobile Backdrop */}
+      {isMobileSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-40 lg:hidden"
+          onClick={onCloseMobile}
+        />
+      )}
+
+      <div className={`fixed inset-y-0 left-0 z-50 transform ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'} transition-transform duration-300 lg:relative lg:translate-x-0 flex-shrink-0`}>
+        {/* Sidebar */}
+        <aside
+          className={`${
+            isCollapsed ? 'w-16' : 'w-64'
+          } bg-slate-900 text-white h-screen flex flex-col sticky top-0 overflow-hidden transition-all duration-300`}
+        >
         {/* Logo */}
         <div className={`p-4 flex items-center justify-center border-b border-slate-800 min-w-0 min-h-[73px]`}>
           <img 
             src="https://bepro.uz/wp-content/uploads/2024/07/logotype-horizontal.png" 
             alt="BePro" 
             className={`cursor-pointer transition-all duration-300 object-contain flex-shrink-0 ${isCollapsed ? 'w-8 h-8' : 'w-32 h-auto'}`}
-            onClick={onGoHome}
+            onClick={() => { onGoHome(); onCloseMobile(); }}
           />
         </div>
 
@@ -99,7 +112,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
             {onViewDashboard && (
               <button
-                onClick={onViewDashboard}
+                onClick={() => { onViewDashboard(); onCloseMobile(); }}
                 title={isCollapsed ? 'Natijalar' : undefined}
                 className={navBtn(activeView === 'DASHBOARD')}
               >
@@ -110,7 +123,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
             {onViewMyResults && (
               <button
-                onClick={onViewMyResults}
+                onClick={() => { onViewMyResults(); onCloseMobile(); }}
                 title={isCollapsed ? 'Mening natijalarim' : undefined}
                 className={navBtn(activeView === 'MY_RESULTS')}
               >
@@ -129,7 +142,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           {visibleModules.map(module => (
             <button
               key={module.id}
-              onClick={() => onSelectModule(module.id)}
+              onClick={() => { onSelectModule(module.id); onCloseMobile(); }}
               title={isCollapsed ? module.name : undefined}
               className={navBtn(activeModuleId === module.id && ['CONTENT', 'MANAGE', 'MODULE_STATS'].includes(activeView))}
             >
@@ -154,7 +167,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
             {onViewSystems && (
               <button
-                onClick={onViewSystems}
+                onClick={() => { onViewSystems(); onCloseMobile(); }}
                 title={isCollapsed ? 'Tizimlar' : undefined}
                 className={navBtn(activeView === 'SYSTEMS')}
               >
@@ -165,7 +178,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
             {role === 'ADMIN' && onViewUsers && (
               <button
-                onClick={onViewUsers}
+                onClick={() => { onViewUsers(); onCloseMobile(); }}
                 title={isCollapsed ? 'Foydalanuvchilar' : undefined}
                 className={navBtn(activeView === 'USERS')}
               >
@@ -176,7 +189,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
             {onViewSettings && (
               <button
-                onClick={onViewSettings}
+                onClick={() => { onViewSettings(); onCloseMobile(); }}
                 title={isCollapsed ? 'Profil' : undefined}
                 className={navBtn(activeView === 'SETTINGS')}
               >
@@ -206,7 +219,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               </button>
               <div className="border-t border-slate-700" />
               <button
-                onClick={() => { setShowUserMenu(false); onViewSettings?.(); }}
+                onClick={() => { setShowUserMenu(false); onViewSettings?.(); onCloseMobile(); }}
                 className="w-full flex items-center gap-3 px-4 py-3 text-slate-300 hover:bg-slate-700 hover:text-white transition-all text-sm font-medium"
               >
                 <i className="fas fa-user-gear w-4 text-center text-slate-400"></i>
@@ -251,18 +264,19 @@ const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </aside>
 
-      {/* Collapse toggle button */}
-      <button
-        onClick={() => setIsCollapsed(prev => !prev)}
-        className="absolute top-5 -right-3 z-20 w-6 h-6 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center hover:bg-slate-700 transition-all shadow-md"
-      >
-        <i
-          className={`fas fa-chevron-left text-slate-400 text-xs transition-transform duration-300 ${
-            isCollapsed ? 'rotate-180' : ''
-          }`}
-        ></i>
-      </button>
-    </div>
+        {/* Collapse toggle button */}
+        <button
+          onClick={() => setIsCollapsed(prev => !prev)}
+          className="hidden lg:flex absolute top-5 -right-3 z-20 w-6 h-6 rounded-full bg-slate-800 border border-slate-700 items-center justify-center hover:bg-slate-700 transition-all shadow-md"
+        >
+          <i
+            className={`fas fa-chevron-left text-slate-400 text-xs transition-transform duration-300 ${
+              isCollapsed ? 'rotate-180' : ''
+            }`}
+          ></i>
+        </button>
+      </div>
+    </>
   );
 };
 

@@ -386,7 +386,7 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
           quizHasPassingScore ? quizPassingScore : null
         );
       } else {
-        if (quizQuestions.length === 0) { alert('Kamida bitta savol qo\'shilishi shart'); return; }
+        
         const questionRequests = quizQuestions.map(q => ({
           text: q.text,
           options: q.options,
@@ -426,10 +426,10 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
         await refreshModuleData();
       } else if (itemToDelete.type === 'QUESTION') {
         await quizService.deleteQuestion(itemToDelete.extraId as string | number, itemToDelete.id as number);
-        const normalized = await refreshModuleData();
-        const freshSub = normalized.find(s => s.id === itemToDelete.quizSubModuleId);
-        if (freshSub && freshSub.quizResponse) {
-          setManagingQuiz({ quiz: freshSub.quizResponse, subModuleId: itemToDelete.quizSubModuleId as string | number });
+        await refreshModuleData();
+        if (editingQuizId === itemToDelete.extraId) {
+            const updatedQuestions = await quizService.getQuizQuestions(editingQuizId);
+            setQuizQuestions(updatedQuestions || []);
         }
       } else if (itemToDelete.type === 'MEDIA') {
         setDeletingMediaId(String(itemToDelete.id));
@@ -464,33 +464,53 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
     setAddMode('SUB_MODULE');
   };
 
-  const handleAddQuizQuestion = () => {
+  const handleAddQuizQuestion = async () => {
     if (!quizCurrentQuestion.text || !quizCurrentQuestion.options?.every(o => o.trim())) {
       alert('Savol va barcha javob variantlarini to\'ldiring');
       return;
     }
 
-    if (typeof editingQuizQuestionIndex === 'number') {
-      setQuizQuestions(prev => {
-        const next = [...prev];
-        next[editingQuizQuestionIndex] = {
-          ...next[editingQuizQuestionIndex],
+    if (editingQuizId) {
+      try {
+        const correctAnsStr = quizCurrentQuestion.options[quizCurrentQuestion.correctAnswer || 0];
+        if (typeof editingQuizQuestionIndex === 'number') {
+          const qId = quizQuestions[editingQuizQuestionIndex].id;
+          await quizService.updateQuestion(editingQuizId, Number(qId), quizCurrentQuestion.text, quizCurrentQuestion.options as string[], correctAnsStr, Number(lessonSubModuleId));
+        } else {
+          await quizService.createQuestion(editingQuizId, quizCurrentQuestion.text, quizCurrentQuestion.options as string[], correctAnsStr, Number(lessonSubModuleId));
+        }
+        const updatedQuestions = await quizService.getQuizQuestions(editingQuizId);
+        setQuizQuestions(updatedQuestions || []);
+        setEditingQuizQuestionIndex(null);
+        setQuizCurrentQuestion({ text: '', options: ['', ''], correctAnswer: 0 });
+        await refreshModuleData();
+      } catch (err) {
+        console.error(err);
+        alert('Savolni saqlashda xatolik yuz berdi');
+      }
+    } else {
+      if (typeof editingQuizQuestionIndex === 'number') {
+        setQuizQuestions(prev => {
+          const next = [...prev];
+          next[editingQuizQuestionIndex] = {
+            ...next[editingQuizQuestionIndex],
+            text: quizCurrentQuestion.text || '',
+            options: quizCurrentQuestion.options as string[],
+            correctAnswer: quizCurrentQuestion.correctAnswer || 0,
+          };
+          return next;
+        });
+        setEditingQuizQuestionIndex(null);
+      } else {
+        setQuizQuestions(prev => [...prev, {
+          id: `q-${Date.now()}`,
           text: quizCurrentQuestion.text || '',
           options: quizCurrentQuestion.options as string[],
           correctAnswer: quizCurrentQuestion.correctAnswer || 0,
-        };
-        return next;
-      });
-      setEditingQuizQuestionIndex(null);
-    } else {
-      setQuizQuestions(prev => [...prev, {
-        id: `q-${Date.now()}`,
-        text: quizCurrentQuestion.text || '',
-        options: quizCurrentQuestion.options as string[],
-        correctAnswer: quizCurrentQuestion.correctAnswer || 0,
-      }]);
+        }]);
+      }
+      setQuizCurrentQuestion({ text: '', options: ['', ''], correctAnswer: 0 });
     }
-    setQuizCurrentQuestion({ text: '', options: ['', '', '', ''], correctAnswer: 0 });
   };
 
   const handleEditQuizQuestion = (idx: number) => {
@@ -498,11 +518,16 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
     setQuizCurrentQuestion(quizQuestions[idx]);
   };
 
-  const handleDeleteQuizQuestionLocally = (idx: number) => {
-    setQuizQuestions(prev => prev.filter((_, i) => i !== idx));
-    if (editingQuizQuestionIndex === idx) {
-      setEditingQuizQuestionIndex(null);
-      setQuizCurrentQuestion({ text: '', options: ['', '', '', ''], correctAnswer: 0 });
+  const handleDeleteQuizQuestionLocally = async (idx: number) => {
+    if (editingQuizId) {
+      const qId = quizQuestions[idx].id;
+      setItemToDelete({ id: qId, type: 'QUESTION', name: 'Savol', extraId: editingQuizId, quizSubModuleId: lessonSubModuleId || undefined });
+    } else {
+      setQuizQuestions(prev => prev.filter((_, i) => i !== idx));
+      if (editingQuizQuestionIndex === idx) {
+        setEditingQuizQuestionIndex(null);
+        setQuizCurrentQuestion({ text: '', options: ['', ''], correctAnswer: 0 });
+      }
     }
   };
 
@@ -983,29 +1008,7 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
 
                   {quizTab === 'QUESTIONS' && (
                     <div className="space-y-4 animate-fadeIn">
-                      {editingQuizId ? (
-                        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl p-6 text-center">
-                          <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <i className="fas fa-list-check text-2xl"></i>
-                          </div>
-                          <h4 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-2">Savollarni tahrirlash</h4>
-                          <p className="text-slate-600 dark:text-slate-400 text-sm mb-6 max-w-md mx-auto">
-                            Ushbu quiz allaqachon yaratilgan. Savollarni tahrirlash uchun quyidagi tugmani bosing. O'zgarishlar darhol saqlanadi.
-                          </p>
-                          <button
-                            onClick={(e) => {
-                               e.preventDefault();
-                               const activeSub = subModules.find(sm => String(sm.id) === String(lessonSubModuleId));
-                               if (activeSub && activeSub.quizResponse) {
-                                 handleManageQuizQuestions(activeSub.quizResponse, activeSub.id);
-                               }
-                            }}
-                            className="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2 mx-auto"
-                          >
-                            <i className="fas fa-external-link-alt"></i> Savollarni ochish
-                          </button>
-                        </div>
-                      ) : (
+                      {true ? (
                         <>
                           <div className="flex justify-between items-center pb-2">
                             <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm">Savollar jadvali ({quizQuestions.length})</h4>
@@ -1041,16 +1044,22 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
                                     </td>
                                     <td className="px-4 py-4 whitespace-normal align-top">
                                       <div className="grid grid-cols-1 gap-2 w-full">
-                                        {(quizCurrentQuestion.options || ['', '', '', '']).map((opt, oIdx) => (
-                                          <div key={oIdx} className="flex items-center gap-2">
+                                        {(quizCurrentQuestion.options || []).map((opt, oIdx) => (
+                                          <div key={oIdx} className="flex items-center gap-2 group">
                                             <input type="radio" name="new-question-correct" checked={quizCurrentQuestion.correctAnswer === oIdx} onChange={() => setQuizCurrentQuestion(p => ({ ...p, correctAnswer: oIdx }))} className="accent-orange-600 w-4 h-4 cursor-pointer shrink-0" title="To'g'ri javobni belgilash" />
                                             <input type="text" placeholder={`Variant ${String.fromCharCode(65 + oIdx)}`} className={`flex-1 text-sm px-3 py-2 rounded-xl border ${quizCurrentQuestion.correctAnswer === oIdx ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20 text-orange-900 dark:text-orange-100 font-medium' : 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100'} outline-none focus:border-orange-500 transition-colors`} value={opt} onChange={e => {
-                                              const newOpts = [...(quizCurrentQuestion.options || ['', '', '', ''])];
+                                              const newOpts = [...(quizCurrentQuestion.options || [])];
                                               newOpts[oIdx] = e.target.value;
                                               setQuizCurrentQuestion(p => ({ ...p, options: newOpts }));
                                             }} />
+                                            <button type="button" onClick={() => setQuizCurrentQuestion(p => ({...p, options: (p.options||[]).filter((_, i) => i !== oIdx)}))} className="w-8 h-8 rounded-lg flex items-center justify-center text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors shrink-0">
+                                              <i className="fas fa-times"></i>
+                                            </button>
                                           </div>
                                         ))}
+                                        <button type="button" onClick={() => setQuizCurrentQuestion(p => ({ ...p, options: [...(p.options || []), ''] }))} className="text-sm text-blue-600 dark:text-blue-400 font-bold hover:underline flex items-center gap-1 self-start mt-1">
+                                          <i className="fas fa-plus text-xs"></i> Variant qo'shish
+                                        </button>
                                       </div>
                                     </td>
                                     <td className="px-4 py-4 align-top">
@@ -1077,16 +1086,22 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
                                         </td>
                                         <td className="px-4 py-4 whitespace-normal align-top">
                                           <div className="grid grid-cols-1 gap-2 w-full">
-                                            {(quizCurrentQuestion.options || ['', '', '', '']).map((opt, oIdx) => (
-                                              <div key={oIdx} className="flex items-center gap-2">
+                                            {(quizCurrentQuestion.options || []).map((opt, oIdx) => (
+                                              <div key={oIdx} className="flex items-center gap-2 group">
                                                 <input type="radio" name={`edit-question-correct-${qIdx}`} checked={quizCurrentQuestion.correctAnswer === oIdx} onChange={() => setQuizCurrentQuestion(p => ({ ...p, correctAnswer: oIdx }))} className="accent-orange-600 w-4 h-4 cursor-pointer shrink-0" title="To'g'ri javobni belgilash" />
                                                 <input type="text" placeholder={`Variant ${String.fromCharCode(65 + oIdx)}`} className={`flex-1 text-sm px-3 py-2 rounded-xl border ${quizCurrentQuestion.correctAnswer === oIdx ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20 text-orange-900 dark:text-orange-100 font-medium' : 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100'} outline-none focus:border-orange-500 transition-colors`} value={opt} onChange={e => {
-                                                  const newOpts = [...(quizCurrentQuestion.options || ['', '', '', ''])];
+                                                  const newOpts = [...(quizCurrentQuestion.options || [])];
                                                   newOpts[oIdx] = e.target.value;
                                                   setQuizCurrentQuestion(p => ({ ...p, options: newOpts }));
                                                 }} />
+                                                <button type="button" onClick={() => setQuizCurrentQuestion(p => ({...p, options: (p.options||[]).filter((_, i) => i !== oIdx)}))} className="w-8 h-8 rounded-lg flex items-center justify-center text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors shrink-0">
+                                                  <i className="fas fa-times"></i>
+                                                </button>
                                               </div>
                                             ))}
+                                            <button type="button" onClick={() => setQuizCurrentQuestion(p => ({ ...p, options: [...(p.options || []), ''] }))} className="text-sm text-blue-600 dark:text-blue-400 font-bold hover:underline flex items-center gap-1 self-start mt-1">
+                                              <i className="fas fa-plus text-xs"></i> Variant qo'shish
+                                            </button>
                                           </div>
                                         </td>
                                         <td className="px-4 py-4 align-top">
@@ -1154,7 +1169,7 @@ const AdminContentManager: React.FC<AdminContentManagerProps> = ({ module, onUpd
                             </table>
                           </div>
                         </>
-                      )}
+                      ) : null}
                     </div>
                   )}
 
