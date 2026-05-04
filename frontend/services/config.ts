@@ -1,7 +1,7 @@
 const getBaseUrl = () => {
-  let envUrl = import.meta.env.VITE_API_BASE_URL;
+  let envUrl: string | undefined = import.meta.env.VITE_API_BASE_URL;
   if (envUrl && typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
-     envUrl = envUrl.replace('localhost', window.location.hostname).replace('127.0.0.1', window.location.hostname);
+    envUrl = envUrl.replace('localhost', window.location.hostname).replace('127.0.0.1', window.location.hostname);
   }
   if (envUrl) return envUrl;
   

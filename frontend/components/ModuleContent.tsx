@@ -23,9 +23,9 @@ interface SubModule {
 
 interface ContentItem {
   id: string;
-  type: 'lesson' | 'quiz';
+  type: 'lesson' | 'quiz' | 'quizError';
   title: string;
-  data: Lesson | Quiz;
+  data: Lesson | Quiz | null;
 }
 
 interface MediaItem {
@@ -193,7 +193,7 @@ const MediaRenderer: React.FC<{ media: MediaItem; title: string; lessonId?: stri
     const now = Date.now();
     if (now - lastPostTimeRef.current > 5000) {
       lastPostTimeRef.current = now;
-      progressService.updateLessonProgress(currentUser.id, Number(lessonId), percentage);
+      progressService.updateLessonProgress(Number(currentUser.id), Number(lessonId), percentage);
       if (onProgressUpdate) onProgressUpdate(percentage);
     }
   };
@@ -202,7 +202,7 @@ const MediaRenderer: React.FC<{ media: MediaItem; title: string; lessonId?: stri
     if (!lessonId || !currentUser) return;
     const video = e.currentTarget;
     if (video) maxTimeRef.current = video.duration;
-    progressService.updateLessonProgress(currentUser.id, Number(lessonId), 100);
+    progressService.updateLessonProgress(Number(currentUser.id), Number(lessonId), 100);
     if (onProgressUpdate) onProgressUpdate(100);
   };
 
@@ -237,14 +237,14 @@ const MediaRenderer: React.FC<{ media: MediaItem; title: string; lessonId?: stri
             const now = Date.now();
             if (now - lastPostTimeRef.current > 5000) {
               lastPostTimeRef.current = now;
-              progressService.updateLessonProgress(currentUser.id, Number(lessonId), maxPercentageRef.current);
+              progressService.updateLessonProgress(Number(currentUser.id), Number(lessonId), maxPercentageRef.current);
               if (onProgressUpdate) onProgressUpdate(maxPercentageRef.current);
             }
           }}
           onEnded={() => {
             if (!lessonId || !currentUser) return;
             maxPercentageRef.current = 100;
-            progressService.updateLessonProgress(currentUser.id, Number(lessonId), 100);
+            progressService.updateLessonProgress(Number(currentUser.id), Number(lessonId), 100);
             if (onProgressUpdate) onProgressUpdate(100);
           }}
         />
@@ -296,7 +296,7 @@ const ModuleContent: React.FC<ModuleContentProps> = ({ module, currentUser }) =>
       
       const promises = allLessons.map(async (lesson) => {
         if (!lesson.id) return;
-        const p = await progressService.getLessonProgress(currentUser.id, Number(lesson.id));
+        const p = await progressService.getLessonProgress(Number(currentUser.id), Number(lesson.id));
         if (p) {
           // Allow for both 'completed' and 'complated' (backend typo)
           newCompleted[String(lesson.id)] = p.completed || p.complated || false;
@@ -435,7 +435,7 @@ const ModuleContent: React.FC<ModuleContentProps> = ({ module, currentUser }) =>
 
     if (!hasVideo) {
       const timer = setTimeout(() => {
-        progressService.updateLessonProgress(currentUser.id, Number(selectedLesson.id), 100);
+        progressService.updateLessonProgress(Number(currentUser.id), Number(selectedLesson.id), 100);
         setLessonCompleted(prev => {
           if (!prev[String(selectedLesson?.id)]) {
             return { ...prev, [String(selectedLesson?.id)]: true };

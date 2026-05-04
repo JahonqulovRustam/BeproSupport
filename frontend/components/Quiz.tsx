@@ -64,12 +64,9 @@ const Quiz: React.FC<QuizProps> = ({ questions, lessonTitle, currentUserId, onCo
 
     try {
       await testAttemptService.submit({
-        userId: parseInt(currentUserId),
-        lesson: lessonTitle,
+        quizId: 0, // Fallback since Quiz.tsx doesn't have quizId
         totalQuestions: questions.length,
-        correctAnswers: correct,
-        startedAt: startedAt.current,
-        submittedAt: new Date().toISOString(),
+        answers: [], // Not populated in this legacy component
       });
       setSubmitted(true);
       onComplete(percentage);
