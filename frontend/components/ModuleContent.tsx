@@ -9,7 +9,6 @@ const playbackMemory: Record<string, number> = {};
 interface ModuleContentProps {
   module: SystemModule;
   currentUser: User;
-  onTakeTest: (lesson: Lesson) => void;
 }
 
 interface SubModule {
@@ -350,6 +349,8 @@ const ModuleContent: React.FC<ModuleContentProps> = ({ module, currentUser }) =>
           const visibleLessons = firstSub.lessons?.filter((lesson) => !isQuizLesson(lesson)) ?? [];
           if (visibleLessons.length > 0) {
             handleSelectLesson(firstSub.id ?? null, visibleLessons[0]);
+          } else if ((firstSub as any).quiz || firstSub.quizResponse) {
+            handleSelectQuiz(firstSub.id ?? null, ((firstSub as any).quiz || firstSub.quizResponse) as Quiz);
           } else {
             setSelectedContent(null);
           }
@@ -416,9 +417,13 @@ const ModuleContent: React.FC<ModuleContentProps> = ({ module, currentUser }) =>
         // Only switch if current one is deleted
         handleSelectLesson(currentSubModule.id ?? null, visible[0]);
       }
-    } else if (!selectedContent && visible.length > 0) {
+    } else if (!selectedContent) {
       // Only auto-select if nothing is selected
-      handleSelectLesson(currentSubModule.id ?? null, visible[0]);
+      if (visible.length > 0) {
+        handleSelectLesson(currentSubModule.id ?? null, visible[0]);
+      } else if ((currentSubModule as any).quiz || currentSubModule.quizResponse) {
+        handleSelectQuiz(currentSubModule.id ?? null, ((currentSubModule as any).quiz || currentSubModule.quizResponse) as Quiz);
+      }
     }
   }, [currentSubModule]);
 
@@ -465,7 +470,7 @@ const ModuleContent: React.FC<ModuleContentProps> = ({ module, currentUser }) =>
   }
 
   const currentMedia = currentMediaList[mediaIndex] || null;
-  const hasContent = selectedContent !== null && (selectedLesson !== null || selectedQuiz !== null);
+  const hasContent = selectedContent !== null && (selectedLesson !== null || selectedQuiz !== null || selectedContent.type === 'quizError');
 
   if (isLoading) {
     return (
@@ -495,59 +500,70 @@ const ModuleContent: React.FC<ModuleContentProps> = ({ module, currentUser }) =>
       <div className="grid lg:grid-cols-[1.7fr,0.9fr] gap-6">
         <div>
           {selectedLesson ? (
-            <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm overflow-hidden">
-              <div className="aspect-video bg-black flex items-center justify-center relative">
-                {currentMedia ? (
-                  <MediaRenderer 
-                    media={currentMedia} 
-                    title={selectedLesson.title} 
-                    lessonId={selectedLesson.id}
-                    currentUser={currentUser}
-                    onProgressUpdate={(percentage) => {
-                      if (percentage >= 90) {
-                        setLessonCompleted(prev => {
-                          if (!prev[String(selectedLesson.id)]) {
-                            return { ...prev, [String(selectedLesson.id)]: true };
-                          }
-                          return prev;
-                        });
-                      }
-                    }}
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-slate-400 flex-col gap-3">
-                    <i className="fas fa-photo-film text-4xl"></i>
-                    <span>Media yoki video mavjud emas</span>
-                  </div>
-                )}
-                {currentMediaList.length > 1 && (
-                  <div className="absolute bottom-3 left-0 right-0 flex justify-center items-center gap-3 px-4">
-                    <button
-                      className="w-8 h-8 bg-black/50 text-white rounded-full flex items-center justify-center disabled:opacity-30 hover:bg-black/70 transition-all"
-                      disabled={mediaIndex === 0}
-                      onClick={() => setMediaIndex((index: number) => Math.max(index - 1, 0))}
-                    >
-                      <i className="fas fa-chevron-left text-xs"></i>
-                    </button>
-                    <span className="text-white text-xs bg-black/50 px-2 py-1 rounded-full">
-                      {mediaIndex + 1} / {currentMediaList.length}
-                    </span>
-                    <button
-                      className="w-8 h-8 bg-black/50 text-white rounded-full flex items-center justify-center disabled:opacity-30 hover:bg-black/70 transition-all"
-                      disabled={mediaIndex === currentMediaList.length - 1}
-                      onClick={() => setMediaIndex((index: number) => Math.min(index + 1, currentMediaList.length - 1))}
-                    >
-                      <i className="fas fa-chevron-right text-xs"></i>
-                    </button>
-                  </div>
-                )}
+            (!currentMedia && (!selectedLesson.description || selectedLesson.description.trim() === '')) ? (
+              <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm overflow-hidden p-12 text-center border border-dashed border-slate-200 dark:border-slate-700">
+                <div className="w-20 h-20 bg-slate-50 dark:bg-slate-900/50 rounded-full flex items-center justify-center mx-auto mb-5 text-slate-300 dark:text-slate-600">
+                  <i className="fas fa-folder-open text-3xl"></i>
+                </div>
+                <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-3">{selectedLesson.title}</h3>
+                <p className="text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
+                  Ushbu dars uchun administrator tomonidan hali media (video/rasm) yoki matnli ma'lumotlar qo'shilmagan. Iltimos, keyinroq qayta tekshiring yoki adminga murojaat qiling.
+                </p>
               </div>
+            ) : (
+              <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm overflow-hidden">
+                {currentMedia && (
+                  <div className="aspect-video bg-black flex items-center justify-center relative">
+                    <MediaRenderer 
+                      media={currentMedia} 
+                      title={selectedLesson.title} 
+                      lessonId={selectedLesson.id}
+                      currentUser={currentUser}
+                      onProgressUpdate={(percentage) => {
+                        if (percentage >= 90) {
+                          setLessonCompleted(prev => {
+                            if (!prev[String(selectedLesson.id)]) {
+                              return { ...prev, [String(selectedLesson.id)]: true };
+                            }
+                            return prev;
+                          });
+                        }
+                      }}
+                    />
+                    {currentMediaList.length > 1 && (
+                      <div className="absolute bottom-3 left-0 right-0 flex justify-center items-center gap-3 px-4">
+                        <button
+                          className="w-8 h-8 bg-black/50 text-white rounded-full flex items-center justify-center disabled:opacity-30 hover:bg-black/70 transition-all"
+                          disabled={mediaIndex === 0}
+                          onClick={() => setMediaIndex((index: number) => Math.max(index - 1, 0))}
+                        >
+                          <i className="fas fa-chevron-left text-xs"></i>
+                        </button>
+                        <span className="text-white text-xs bg-black/50 px-2 py-1 rounded-full">
+                          {mediaIndex + 1} / {currentMediaList.length}
+                        </span>
+                        <button
+                          className="w-8 h-8 bg-black/50 text-white rounded-full flex items-center justify-center disabled:opacity-30 hover:bg-black/70 transition-all"
+                          disabled={mediaIndex === currentMediaList.length - 1}
+                          onClick={() => setMediaIndex((index: number) => Math.min(index + 1, currentMediaList.length - 1))}
+                        >
+                          <i className="fas fa-chevron-right text-xs"></i>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
 
-              <div className="p-6">
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-3">{selectedLesson.title}</h2>
-                <p className="text-slate-500 dark:text-slate-400 leading-relaxed">{selectedLesson.description}</p>
+                <div className="p-6 md:p-8">
+                  <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-4">{selectedLesson.title}</h2>
+                  {selectedLesson.description && selectedLesson.description.trim() !== '' && (
+                    <div className="text-slate-600 dark:text-slate-300 leading-relaxed prose prose-slate dark:prose-invert max-w-none">
+                      {selectedLesson.description}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+            )
           ) : selectedContent?.type === 'quizError' ? (
             <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800">
               <div className="w-20 h-20 bg-amber-100 dark:bg-amber-900/30 text-amber-500 rounded-full flex items-center justify-center mb-6">

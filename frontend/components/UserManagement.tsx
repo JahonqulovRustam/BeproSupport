@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { userService } from '../services/userService';
-import { User, UserRole, SystemModule } from '../types';
-
-interface UserManagementProps {
+import { User, UserRole, SystemModule } from '../types';interface UserManagementProps {
   currentUser: User;
   users: User[];
   modules: SystemModule[];
@@ -22,17 +21,15 @@ const UserManagement: React.FC<UserManagementProps> = ({ currentUser, users, onA
   const [role, setRole] = useState<UserRole>('EMPLOYEE');
   const [saving, setSaving] = useState(false);
 
-  React.useEffect(() => {
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setShowModal(false);
-    };
-    window.addEventListener('keydown', handleEsc);
-    return () => window.removeEventListener('keydown', handleEsc);
-  }, []);
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   React.useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setShowModal(false);
+      if (e.key === 'Escape') {
+        setShowModal(false);
+        setUserToDelete(null);
+      }
     };
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
@@ -59,14 +56,23 @@ const UserManagement: React.FC<UserManagementProps> = ({ currentUser, users, onA
     setShowModal(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm("Rostdan ham bu foydalanuvchini o'chirmoqchimisiz?")) return;
+  const confirmDeleteUser = async () => {
+    if (!userToDelete) return;
+    setIsDeleting(true);
     try {
-      await userService.deleteUser(id);
-      onDeleteUser(id);
+      await userService.deleteUser(String(userToDelete.id));
+      onDeleteUser(String(userToDelete.id));
+      setUserToDelete(null);
     } catch (err) {
       alert("Xatolik yuz berdi!");
+    } finally {
+      setIsDeleting(false);
     }
+  };
+
+  const handleDelete = (id: string) => {
+    const u = users.find(u => String(u.id) === id);
+    if (u) setUserToDelete(u);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -295,6 +301,36 @@ const UserManagement: React.FC<UserManagementProps> = ({ currentUser, users, onA
             </form>
           </div>
         </div>
+      )}
+      {userToDelete && createPortal(
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-3xl shadow-2xl p-8 animate-in zoom-in-95 duration-200 m-auto" onClick={e => e.stopPropagation()}>
+            <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
+              <i className="fas fa-user-times text-red-500 text-2xl"></i>
+            </div>
+            <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100 text-center mb-2">Foydalanuvchini o'chirish</h3>
+            <p className="text-slate-500 dark:text-slate-400 text-center text-sm leading-relaxed mb-6">
+              Siz rostdan ham <span className="font-bold text-slate-700 dark:text-slate-300">{userToDelete.name}</span> ni o'chirmoqchimisiz? Ushbu jarayonni ortga qaytarib bo'lmaydi va foydalanuvchiga tegishli <span className="font-bold text-red-500">barcha ma'lumotlar, ishlagan testlari va natijalari</span> butunlay o'chib ketadi!
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setUserToDelete(null)}
+                className="flex-1 px-4 py-3 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold rounded-xl transition-all text-sm"
+              >
+                Bekor qilish
+              </button>
+              <button
+                onClick={confirmDeleteUser}
+                disabled={isDeleting}
+                className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-lg shadow-red-500/30 transition-all text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {isDeleting ? <i className="fas fa-circle-notch fa-spin"></i> : <i className="fas fa-trash-can"></i>}
+                O'chirish
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </>
   );

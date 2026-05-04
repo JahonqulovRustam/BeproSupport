@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import * as XLSX from 'xlsx';
-import { SystemModule, Question } from '../types';
+import { SystemModule, Question, User } from '../types';
 import { testAttemptService, TestAttemptResponse, TestAnswerResponse } from '../services/testAttempService';
 import { userService } from '../services/userService';
 import { quizService } from '../services/quizService';
@@ -34,6 +34,8 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
   const [selectedAttemptForAnalysis, setSelectedAttemptForAnalysis] = useState<EnrichedAttempt | null>(null);
   const [analysisQuestions, setAnalysisQuestions] = useState<Question[]>([]);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
+  const [activeTab, setActiveTab] = useState<'overview' | 'all_employees'>('overview');
+  const [allUsersData, setAllUsersData] = useState<User[]>([]);
 
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
@@ -54,6 +56,7 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
 
         const userMap: Record<number, string> = {};
         allUsers.forEach(u => { userMap[parseInt(u.id)] = u.name; });
+        setAllUsersData(allUsers);
 
         const enriched: EnrichedAttempt[] = rawAttempts.map(a => ({
           id: a.id,
@@ -131,21 +134,58 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
     a.userName.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const employeeStats = React.useMemo(() => {
+    return allUsersData.map(user => {
+      const userAttempts = attempts.filter(a => a.userName === user.name);
+      const totalTaken = userAttempts.length;
+      const passedCount = userAttempts.filter(a => a.passed).length;
+      const averageScore = totalTaken > 0 ? Math.round(userAttempts.reduce((sum, a) => sum + a.scorePercentage, 0) / totalTaken) : 0;
+      
+      return {
+        ...user,
+        totalTaken,
+        passedCount,
+        averageScore,
+        lastAttemptDate: totalTaken > 0 ? userAttempts[0].submittedAt : null,
+      };
+    }).sort((a, b) => b.averageScore - a.averageScore);
+  }, [allUsersData, attempts]);
+
+  const filteredEmployees = employeeStats.filter(e =>
+    e.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   const handleExportExcel = () => {
-    if (filteredAttempts.length === 0) return;
-    const dataToExport = filteredAttempts.map(a => ({
-      'Xodim': a.userName,
-      'Test Nomi': a.quizName,
-      'Jami savollar': a.totalQuestions,
-      "To'g'ri javoblar": a.correctAnswers,
-      'Ball (%)': a.scorePercentage,
-      'Sana': a.submittedAt,
-      'Holat': a.passed ? "O'tdi" : 'Yiqildi',
-    }));
-    const ws = XLSX.utils.json_to_sheet(dataToExport);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Test Natijalari');
-    XLSX.writeFile(wb, `natijalar_${new Date().toLocaleDateString()}.xlsx`);
+    if (activeTab === 'overview') {
+      if (filteredAttempts.length === 0) return;
+      const dataToExport = filteredAttempts.map(a => ({
+        'Xodim': a.userName,
+        'Test Nomi': a.quizName,
+        'Jami savollar': a.totalQuestions,
+        "To'g'ri javoblar": a.correctAnswers,
+        'Ball (%)': a.scorePercentage,
+        'Sana': a.submittedAt,
+        'Holat': a.passed ? "O'tdi" : 'Yiqildi',
+      }));
+      const ws = XLSX.utils.json_to_sheet(dataToExport);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Test Natijalari');
+      XLSX.writeFile(wb, `natijalar_${new Date().toLocaleDateString()}.xlsx`);
+    } else {
+      if (filteredEmployees.length === 0) return;
+      const dataToExport = filteredEmployees.map(e => ({
+        'Xodim': e.name,
+        'Rol': e.role === 'ADMIN' ? 'Administrator' : e.role === 'LEAD' ? 'Lead' : 'Xodim',
+        'Topshirgan testlari': e.totalTaken,
+        "Muvaffaqiyatli": e.passedCount,
+        "O'rtacha ball (%)": e.averageScore,
+        'So\'nggi faollik': e.lastAttemptDate || 'Mavjud emas',
+      }));
+      const ws = XLSX.utils.json_to_sheet(dataToExport);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Xodimlar Natijalari');
+      XLSX.writeFile(wb, `xodimlar_natijalari_${new Date().toLocaleDateString()}.xlsx`);
+    }
   };
 
   const handleAnalyze = async (attempt: EnrichedAttempt) => {
@@ -178,7 +218,33 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
 
   return (
     <div className="space-y-8 animate-fadeIn pb-12">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {/* Tabs */}
+      <div className="flex space-x-1 p-1 bg-slate-200/50 dark:bg-slate-800 rounded-xl w-full sm:w-max mx-auto sm:mx-0">
+        <button
+          onClick={() => { setActiveTab('overview'); setSearchTerm(''); }}
+          className={`flex-1 sm:flex-none px-6 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+            activeTab === 'overview'
+              ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm'
+              : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+          }`}
+        >
+          Umumiy Analitika
+        </button>
+        <button
+          onClick={() => { setActiveTab('all_employees'); setSearchTerm(''); }}
+          className={`flex-1 sm:flex-none px-6 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+            activeTab === 'all_employees'
+              ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm'
+              : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+          }`}
+        >
+          Barcha Xodimlar
+        </button>
+      </div>
+
+      {activeTab === 'overview' && (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
           <div className="flex justify-between items-start">
             <p className="text-slate-500 text-sm font-medium">O'rtacha o'zlashtirish</p>
@@ -365,6 +431,98 @@ const LeadDashboard: React.FC<LeadDashboardProps> = ({ activeModule }) => {
           </button>
         </div>
       </div>
+        </>
+      )}
+
+      {activeTab === 'all_employees' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden animate-fadeIn">
+          <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <h3 className="font-bold text-slate-900 flex items-center gap-2">
+              <i className="fas fa-users text-orange-600"></i>
+              Barcha xodimlar va ularning natijalari
+            </h3>
+            <div className="relative w-full sm:w-64">
+              <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+              <input
+                type="text"
+                placeholder="Xodim nomi..."
+                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider font-semibold">
+                <tr>
+                  <th className="px-6 py-4">Xodim</th>
+                  <th className="px-6 py-4">Rol</th>
+                  <th className="px-6 py-4 text-center">Topshirilgan Testlar</th>
+                  <th className="px-6 py-4 text-center">Muvaffaqiyatli</th>
+                  <th className="px-6 py-4 text-center">O'rtacha Ball</th>
+                  <th className="px-6 py-4">So'nggi Faollik</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredEmployees.map(e => (
+                  <tr key={e.id} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <img src={e.avatar || `https://api.dicebear.com/7.x/shapes/svg?seed=${e.login}`} alt={e.name} className="w-8 h-8 rounded-full bg-slate-100" />
+                        <div>
+                          <p className="font-bold text-slate-900 text-sm">{e.name}</p>
+                          <p className="text-xs text-slate-500">{e.login}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                        e.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' :
+                        e.role === 'LEAD' ? 'bg-blue-100 text-blue-700' :
+                        'bg-slate-100 text-slate-700'
+                      }`}>
+                        {e.role === 'ADMIN' ? 'Administrator' : e.role === 'LEAD' ? 'Lead' : 'Xodim'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-center font-medium text-slate-700">{e.totalTaken}</td>
+                    <td className="px-6 py-4 text-center font-medium text-green-600">{e.passedCount}</td>
+                    <td className="px-6 py-4 text-center">
+                      {e.totalTaken > 0 ? (
+                        <span className={`font-bold ${e.averageScore >= 80 ? 'text-green-600' : e.averageScore >= 60 ? 'text-orange-500' : 'text-red-500'}`}>
+                          {e.averageScore}%
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 text-sm">-</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-slate-400 text-sm">
+                      {e.lastAttemptDate || <span className="italic">Faol emas</span>}
+                    </td>
+                  </tr>
+                ))}
+                {filteredEmployees.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-10 text-center text-slate-400 text-sm italic">
+                      Ma'lumot topilmadi
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
+            <span className="text-xs text-slate-400">{filteredEmployees.length} ta xodim</span>
+            <button
+              onClick={handleExportExcel}
+              disabled={filteredEmployees.length === 0}
+              className="text-orange-600 text-sm font-bold hover:underline disabled:text-slate-400 flex items-center gap-2"
+            >
+              <i className="fas fa-file-excel"></i> Excel yuklab olish
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Analysis Modal */}
       {selectedAttemptForAnalysis && typeof document !== 'undefined' && createPortal(

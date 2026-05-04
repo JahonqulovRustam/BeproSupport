@@ -8,7 +8,6 @@ import UserManagement from './components/UserManagement';
 import SystemManagement from './components/SystemManagement';
 import Settings from './components/Settings';
 import Login from './components/Login';
-import Quiz from './components/Quiz';
 import MyResults from './components/MyResults';
 import { INITIAL_USERS } from './constants';
 import { SystemModule, Lesson, User } from './types';
@@ -42,8 +41,8 @@ const App: React.FC = () => {
   const [users, setUsers] = useState<User[]>(INITIAL_USERS);
   const [modules, setModules] = useState<SystemModule[]>([]);
   const [activeModuleId, setActiveModuleId] = useState('');
-  const [activeLessonForQuiz, setActiveLessonForQuiz] = useState<Lesson | null>(null);
   const [view, setView] = useState<ViewType>('CONTENT');
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   // ─── Validate session on mount ───────────────────────────────────────────────
   useEffect(() => {
@@ -56,7 +55,7 @@ const App: React.FC = () => {
         const user: User = JSON.parse(saved);
         setCurrentUser(user);
         const savedView = localStorage.getItem('bepro_view') as ViewType | null;
-        setView(savedView || (user.role === 'ADMIN' ? 'DASHBOARD' : 'MY_RESULTS'));
+        setView(savedView || ((user.role === 'ADMIN' || user.role === 'LEAD') ? 'DASHBOARD' : 'MY_RESULTS'));
       } catch {
         console.warn('Session expired, logging out.');
         clearSession();
@@ -134,7 +133,7 @@ const App: React.FC = () => {
   };
 
   // ─── User management ─────────────────────────────────────────────────────────
-  const handleAddUser    = (_: User) => userService.getAllUsers().then(setUsers);
+  const handleAddUser    = (updatedUsers: User[]) => setUsers(updatedUsers);
   const handleDeleteUser = (id: string) => setUsers(prev => prev.filter(u => u.id !== id));
   const handleUpdateUser = (updated: User) => {
     setUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
@@ -188,10 +187,11 @@ const App: React.FC = () => {
   if (!currentUser) return <Login onLogin={handleLogin} />;
 
   const isAdmin = currentUser.role === 'ADMIN';
+  const isAdminOrLead = currentUser.role === 'ADMIN' || currentUser.role === 'LEAD';
   const activeModule = modules.find(m => m.id === activeModuleId);
 
   const pageTitle: Record<ViewType, string> = {
-    DASHBOARD:    `${activeModule?.name || 'Tizim'}: Analitika`,
+    DASHBOARD:    'Dashboard',
     MODULE_STATS: `${activeModule?.name || 'Tizim'}: Jamoa statistikasi`,
     USERS:        'Foydalanuvchilar',
     SYSTEMS:      'Tizimlar',
@@ -216,7 +216,7 @@ const App: React.FC = () => {
 
   // ─── Render content — NO setView() calls inside here ─────────────────────────
   const renderContent = () => {
-    console.log('view:', view, '| activeLessonForQuiz:', activeLessonForQuiz);
+    console.log('view:', view);
 
     switch (view) {
       case 'MY_RESULTS':
@@ -251,7 +251,7 @@ const App: React.FC = () => {
         );
 
       case 'DASHBOARD':
-        if (!isAdmin) return emptyState;
+        if (!isAdminOrLead) return emptyState;
         return <LeadDashboard activeModule={activeModule} />;
 
       case 'MODULE_STATS':
@@ -275,24 +275,12 @@ const App: React.FC = () => {
           <ModuleContent
             module={activeModule}
             currentUser={currentUser}
-            onTakeTest={setActiveLessonForQuiz}
           />
         );
     }
   };
 
-  if (activeLessonForQuiz) {
-    return (
-      <Quiz
-        questions={activeLessonForQuiz.questions}
-        lessonId={activeLessonForQuiz.id}
-        lessonTitle={activeLessonForQuiz.title}
-        currentUserId={currentUser.id}
-        onComplete={score => { console.log('Ball:', score); setActiveLessonForQuiz(null); }}
-        onCancel={() => setActiveLessonForQuiz(null)}
-      />
-    );
-  }
+
 
   return (
     <>
@@ -306,7 +294,7 @@ const App: React.FC = () => {
           onViewUsers={isAdmin ? () => setView('USERS') : undefined}
           onViewSettings={() => setView('SETTINGS')}
           onViewSystems={isAdmin ? () => setView('SYSTEMS') : undefined}
-          onViewDashboard={isAdmin ? () => setView('DASHBOARD') : undefined}
+          onViewDashboard={isAdminOrLead ? () => setView('DASHBOARD') : undefined}
           onViewMyResults={() => setView('MY_RESULTS')}
           onLogout={handleLogout}
           theme={theme}
@@ -315,21 +303,42 @@ const App: React.FC = () => {
             setActiveModuleId('');
             setView('CONTENT');
           }}
+          isMobileSidebarOpen={isMobileSidebarOpen}
+          onCloseMobile={() => setIsMobileSidebarOpen(false)}
         />
 
-        <main className="flex-1 p-8 max-h-screen overflow-y-auto custom-scrollbar">
-          {(view !== 'CONTENT' || activeModule) && (
-            <header className="mb-10">
-              <h2 className="text-3xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
-                {pageTitle[view]}
-              </h2>
-              <p className="text-slate-500 dark:text-slate-400 mt-1">
-                {pageSubtitle[view]}
-              </p>
-            </header>
-          )}
+        <main className="flex-1 w-full max-w-full max-h-screen overflow-y-auto custom-scrollbar flex flex-col">
+          {/* Mobile Header */}
+          <div className="lg:hidden flex items-center justify-between p-4 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 sticky top-0 z-30 shadow-sm">
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={() => setIsMobileSidebarOpen(true)}
+                className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+              >
+                <i className="fas fa-bars"></i>
+              </button>
+              <img 
+                src="https://bepro.uz/wp-content/uploads/2024/07/logotype-horizontal.png" 
+                alt="BePro" 
+                className="h-6 object-contain cursor-pointer" 
+                onClick={() => { setActiveModuleId(''); setView('CONTENT'); }} 
+              />
+            </div>
+          </div>
 
-          {renderContent()}
+          <div className="p-4 md:p-8 flex-1 flex flex-col">
+            {(view !== 'CONTENT' || activeModule) && (
+              <header className="mb-6 md:mb-10">
+                <h2 className="text-3xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
+                  {pageTitle[view]}
+                </h2>
+                <p className="text-slate-500 dark:text-slate-400 mt-1">
+                  {pageSubtitle[view]}
+                </p>
+              </header>
+            )}
+            {renderContent()}
+          </div>
         </main>
       </div>
 
